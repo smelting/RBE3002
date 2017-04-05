@@ -27,6 +27,7 @@ if __name__ == '__main__':
 
 	tempGrid.append(makeGridCell(1,1))
 	tempGrid.append(makeGridCell(3,6))
+	publishGrid(tempGrid)
 
 	pubGrid = rospy.Publisher('randGrid', GridCells, queue_size = 10)
 
