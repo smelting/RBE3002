@@ -13,11 +13,12 @@ from geometry_msgs.msg import Point
 
 class Node:
 
-	def __init__(self, x, y):
+	def __init__(self, x, y, new):
 		self.x = x
 		self.y = y
 		self.parent = (0,0)
 		self.cost = 0
+		self.intensity = new
 
 	def inBounds(self, node):
 		global width
@@ -25,9 +26,11 @@ class Node:
 		(x,y) = node
 		return 0 <= x < width*res and 0 <= y < height*res
 
+
 	def neighbors(self):
 		neighbors = [(self.x+res, self.y), (self.x, self.y-res), (self.x-res, self.y), (self.x,self.y+res)]
 		neighbors = filter(self.inBounds, neighbors)
+		neighbors = filter(open, neighbors)
 		return neighbors
 
 
@@ -49,7 +52,7 @@ def goalPoseCallback(msg):
 def heuristic(a, b):
 	(x1,y1) = a
 	(x2,y2) = b
-	return math.fabs(x1 - x2) + math.fabs(y1 - y2)
+	return math.sqrt(math.pow(x1-x2,2) + math.pow(y1-y2,2))
 
 def matchGridPose(p):
 	global res
@@ -62,6 +65,8 @@ def matchPoseIndex(p):
 	ticks = x/res + (y/res*width)
 	return int(ticks)
 
+def open(p):
+	return grid[matchPoseIndex(p)].intensity != 100
 
 def mapCallBack(msg):
 	print "grabbing map"
@@ -84,15 +89,13 @@ def mapCallBack(msg):
 	print "0,0   %f  %f " % (startX,startY)
 	count = 0
 	for new in msg.data:
-		x = (countCol + startX - 1)*res
-		y = (countRow + startY - 1)*res
+		x = (countCol - 1)*res
+		y = (countRow - 1)*res
 		if(countCol == width): #hit the end of the column
 			countRow = countRow + 1
 			countCol = 0
-		if(countRow <= height and new != 100):
-			if(count < 10):
-				print "Making index %f x:%f y:%f with inten %f" %(count,x,y,new)
-			grid.append(Node(x,y))
+		if(countRow <= height):
+			grid.append(Node(x,y,new))
 			count += 1
 			countCol += 1
 
@@ -104,49 +107,54 @@ def genPath(start,goal):
 		path.append(current)
 		current = grid[matchPoseIndex(current)].parent
 		print "next x %f y %f" % (current)
-		rospy.sleep(.5)
+		rospy.sleep(0.0001)
+	return path
 
 def a_star_search(start, goal):
 
 	global newGoal
+	front = {}
 	goal = matchGridPose(goal)
 	start = matchGridPose(start)
 	frontier = PriorityQueue()
 	print "i: %f %f %f" % (matchPoseIndex(start),grid[matchPoseIndex(start)].x,grid[matchPoseIndex(start)].y)
-	frontier.put(grid[matchPoseIndex(start)], 0)
+	frontier.put((0,grid[matchPoseIndex(start)]))
+	front[matchPoseIndex(start)] = start 
 	visited = []
+	
 	print "starting A* at x %f y %f" % (start)
 	while not frontier.empty():
-		current = frontier.get()
-		dumpShit(frontier)
+		(p,current) = frontier.get()
+		#del front[matchPoseIndex((current.x,current.y))]
+		dumpShit(front)
 		#print "current: x %f y %f" %(current.x,current.y)
 		if(current.x == goal[0] and current.y == goal[1]):
 			break
 		for next in current.neighbors():
-			newCost = current.cost + 1
+			newCost = current.cost + res
 			if grid[matchPoseIndex(next)] not in visited or newCost < grid[matchPoseIndex(next)].cost:
 				grid[matchPoseIndex(next)].cost = newCost
-				priority = newCost + heuristic(goal, start)
-				frontier.put(grid[matchPoseIndex(next)],priority)
+				priority = newCost + heuristic(goal, next)*2
+				#print "cost %f Heuristic %f  %f  x: %f y: %f" % (newCost, heuristic(goal, next), priority, next[0], next[1])
+				front[matchPoseIndex(next)] = next 
+				frontier.put((priority,grid[matchPoseIndex(next)]))
 				grid[matchPoseIndex(next)].parent = (current.x,current.y)
 				visited.append(grid[matchPoseIndex(next)])
-				print "LOLOL"
-				rospy.sleep(0.01)
+				#rospy.sleep(0.001)
 	newGoal = False
 	print "done with A*"
 	return genPath(start,goal)
 
 
+
 def dumpShit(q):
-	queue = PriorityQueue()
-	queue = q
 	stuffz = []
-	for i in range(queue.qsize()):
-		new = queue.get()
-		newPoint = makeGridCell(new.x,new.y)
+	for key in q:
+		(x,y) = q[key]
+		newPoint = makeGridCell(x,y)
 		stuffz.append(newPoint)
-		print "Added %f %f" % (new.x,new.y)
-		rospy.sleep(.001)
+		#print "Added %f %f" % (x,y)
+		#rospy.sleep(.00001)
 	publishGrid(stuffz,'frontier')
 
 def publishGrid(cells, type):
@@ -154,8 +162,8 @@ def publishGrid(cells, type):
 	gridMsg = GridCells()
 	gridMsg.header.stamp = rospy.Time.now()
 	gridMsg.header.frame_id = '/map'
-	gridMsg.cell_width = .05
-	gridMsg.cell_height = .05
+	gridMsg.cell_width = res
+	gridMsg.cell_height = res
 	gridMsg.cells = cells
 	if type == 'frontier':
 		frontier_pub.publish(gridMsg)
@@ -163,6 +171,7 @@ def publishGrid(cells, type):
 		visited_pub.publish(gridMsg)
 	elif type == 'notVisited':
 		open_pub.publish(gridMsg)
+
 
 def makeGridCell(x, y):
 	point = Point()
@@ -192,4 +201,5 @@ if __name__ == '__main__':
 		rospy.sleep(0.1)
 		if(newGoal):
 			a_star_search((startPose.position.x,startPose.position.y),(goalPose.position.x,goalPose.position.y))
+			
 			newGoal = False
