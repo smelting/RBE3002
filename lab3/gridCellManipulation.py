@@ -40,9 +40,9 @@ if __name__ == '__main__':
 	rospy.init_node('lab3_grid_cell')
 
 	#subscribers
-	occupancy_sub = rospy.Subscriber('/map',frontierCallBack, queue_size = 1)
-	occupancy_sub = rospy.Subscriber('/map',visidtedCallBack, queue_size = 1)
-	occupancy_sub = rospy.Subscriber('/map',notVisitedCallBack, queue_size = 1)
+	occupancy_sub = rospy.Subscriber('/lab3/frontier', GridCells, frontierCallBack, queue_size = 1)
+	occupancy_sub = rospy.Subscriber('/lab3/visited', GridCells, visidtedCallBack, queue_size = 1)
+	occupancy_sub = rospy.Subscriber('/lab3/open', GridCells, notVisitedCallBack, queue_size = 1)
 
 	#publishers
 	pubGrid = rospy.Publisher('/rand_grid', GridCells, queue_size = 1)

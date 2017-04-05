@@ -7,7 +7,8 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from geometry_msgs.msg import Pose
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import OccupancyGrid
-from collections import defaultdict
+from nav_msgs.msg import GridCells
+from geometry_msgs.msg import Point
 
 
 class Node:
@@ -48,7 +49,7 @@ def goalPoseCallback(msg):
 def heuristic(a, b):
 	(x1,y1) = a
 	(x2,y2) = b
-	return abs(x1 - x2) + abs(y1 - y2)
+	return math.fabs(x1 - x2) + math.fabs(y1 - y2)
 
 def matchGridPose(p):
 	global res
@@ -117,10 +118,10 @@ def a_star_search(start, goal):
 	print "starting A* at x %f y %f" % (start)
 	while not frontier.empty():
 		current = frontier.get()
-		print "current: x %f y %f" %(current.x,current.y)
+		dumpShit(frontier)
+		#print "current: x %f y %f" %(current.x,current.y)
 		if(current.x == goal[0] and current.y == goal[1]):
 			break
-
 		for next in current.neighbors():
 			newCost = current.cost + 1
 			if grid[matchPoseIndex(next)] not in visited or newCost < grid[matchPoseIndex(next)].cost:
@@ -129,23 +130,63 @@ def a_star_search(start, goal):
 				frontier.put(grid[matchPoseIndex(next)],priority)
 				grid[matchPoseIndex(next)].parent = (current.x,current.y)
 				visited.append(grid[matchPoseIndex(next)])
-				#print "LOLOL"
-				#rospy.sleep(0.01)
+				print "LOLOL"
+				rospy.sleep(0.01)
 	newGoal = False
 	print "done with A*"
 	return genPath(start,goal)
+
+
+def dumpShit(q):
+	queue = PriorityQueue()
+	queue = q
+	stuffz = []
+	for i in range(queue.qsize()):
+		new = queue.get()
+		newPoint = makeGridCell(new.x,new.y)
+		stuffz.append(newPoint)
+		print "Added %f %f" % (new.x,new.y)
+		rospy.sleep(.001)
+	publishGrid(stuffz,'frontier')
+
+def publishGrid(cells, type):
+	global frontier_pub
+	gridMsg = GridCells()
+	gridMsg.header.stamp = rospy.Time.now()
+	gridMsg.header.frame_id = '/map'
+	gridMsg.cell_width = .05
+	gridMsg.cell_height = .05
+	gridMsg.cells = cells
+	if type == 'frontier':
+		frontier_pub.publish(gridMsg)
+	elif type == 'visited':
+		visited_pub.publish(gridMsg)
+	elif type == 'notVisited':
+		open_pub.publish(gridMsg)
+
+def makeGridCell(x, y):
+	point = Point()
+	point.x = x
+	point.y = y
+	point.z = 0
+	return point
 
 
 if __name__ == '__main__':
 	rospy.init_node('Lab3_pathPlan')
 	global newGoal
 	global setStart
+	global frontier_pub
 	setStart = False
 	newGoal = False
 
 	rospy.Subscriber("/move_base_simple/goal",PoseStamped, goalPoseCallback, queue_size = 1)
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
+
+	frontier_pub = rospy.Publisher('/lab3/frontier', GridCells, queue_size = 1)
+	visited_pub = rospy.Publisher('/lab3/visited', GridCells, queue_size = 1)
+	open_pub = rospy.Publisher('/lab3/open', GridCells, queue_size = 1)
 
 	while(1):
 		rospy.sleep(0.1)
