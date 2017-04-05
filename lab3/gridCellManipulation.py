@@ -1,5 +1,6 @@
 import rospy, math, tf
-from nav_msgs import OccupancyGrid
+from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import GridCells
 from geometry_msgs.msg import Point
 
 def makeGridCell(x, y):
@@ -11,24 +12,26 @@ def makeGridCell(x, y):
 
 
 def publishGrid(cells):
-	global grid
 	gridMsg = GridCells()
-	gridMsg.header.frame_id = 'map'
+	gridMsg.header.stamp = rospy.Time.now()
+	gridMsg.header.frame_id = '/map'
 	gridMsg.cell_width = .2
 	gridMsg.cell_height = .2
 	gridMsg.cells = cells
-	grid.publish(gridMsg)
+	pubGrid.publish(gridMsg)
 
 if __name__ == '__main__':
-	global pubGrid
-	global tempGrid
+	rospy.init_node('lab3_grid_cell')
 
 	tempGrid = []
 
 	tempGrid.append(makeGridCell(1,1))
 	tempGrid.append(makeGridCell(3,6))
+	pubGrid = rospy.Publisher('/rand_grid', GridCells, queue_size = 1)
 	publishGrid(tempGrid)
-
-	pubGrid = rospy.Publisher('randGrid', GridCells, queue_size = 10)
+	print "published"
+	while(1):
+		rospy.sleep(.25)
+		publishGrid(tempGrid)
 
 
