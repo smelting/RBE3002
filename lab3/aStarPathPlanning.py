@@ -12,7 +12,7 @@ from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import GridCells
 from geometry_msgs.msg import Point
 
-
+#class for each node on the map grid
 class Node:
 
 	def __init__(self, x, y, new):
@@ -21,21 +21,22 @@ class Node:
 		self.parent = (0,0)
 		self.cost = 0
 		self.intensity = new
-
+		
+	#makes sure the node is within the bounds of the map
 	def inBounds(self, node):
 		global width
 		global height
 		(x,y) = node
 		return 0 <= x < width*res and 0 <= y < height*res
 
-
+	#finds and returns all neighbors (including diagonals)
 	def neighbors(self):
 		neighbors = [(self.x+res, self.y), (self.x, self.y-res), (self.x-res, self.y), (self.x,self.y+res),(self.x+res,self.y+res),(self.x-res,self.y+res),(self.x-res,self.y-res),(self.x+res,self.y-res)]
 		neighbors = filter(self.inBounds, neighbors)
 		neighbors = filter(open, neighbors)
 		return neighbors
 
-
+#callback for RVIZ startpose position
 def startPoseCallback(msg):
 	global startPose
 	startPose = Pose()
@@ -43,6 +44,7 @@ def startPoseCallback(msg):
 	setStart = True
 	print "starting at x %f y %f" %(startPose.position.x,startPose.position.y)
 
+#callback for RVIZ goalpose position
 def goalPoseCallback(msg):
 	global newGoal
 	global goalPose
@@ -51,25 +53,30 @@ def goalPoseCallback(msg):
 	newGoal = True
 	print "ending at x %f y %f" %(goalPose.position.x,goalPose.position.y)
 
+#determines the heuristic cost from point a to b using euclidian distance
 def heuristic(a, b):
 	(x1,y1) = a
 	(x2,y2) = b
 	return math.sqrt(math.pow(x1-x2,2) + math.pow(y1-y2,2))
 
+#moves a point to the nearest grid position
 def matchGridPose(p):
 	global res
 	(x,y) = p
 	(x,y) = (round(x/res), round(y/res))
 	return (x*res, y*res)
 
+#determines where a point is in the grid array
 def matchPoseIndex(p):
 	(x,y) = p
 	ticks = x/res + (y/res*width)
 	return int(ticks)
 
+#determines if the point is open (not blocked)
 def open(p):
 	return grid[matchPoseIndex(p)].intensity != 100
 
+#interpret a map and create the grid using the width/height and map info
 def mapCallBack(msg):
 	print "grabbing map"
 	global grid
@@ -101,6 +108,7 @@ def mapCallBack(msg):
 			count += 1
 			countCol += 1
 
+#publish the path that A* creates (only important landmarks)
 def publishPath(p):
 	poseArray = []
 	msg = Path()
@@ -118,7 +126,7 @@ def publishPath(p):
 	path_pub.publish(msg)
 
 
-
+#creates the most direct path using A* generated path
 def genPath(start,goal):
 	path = []
 	current = goal
@@ -135,6 +143,7 @@ def genPath(start,goal):
 		current = grid[matchPoseIndex(current)].parent
 	return path
 
+#calculates the slope between 2 points, returns inf when verticle
 def calcSlope(p,b):
 	(x1,y1) = p
 	(x2,y2) = b
@@ -144,6 +153,7 @@ def calcSlope(p,b):
 		return 0
 	return (y1-y2)/(x1-x2)
 
+#uses A* with heapq to determine best path between two points on a map with costs
 def a_star_search(start, goal):
 
 	global newGoal
@@ -182,7 +192,7 @@ def a_star_search(start, goal):
 	publishPath(genPath(start,goal))
 
 
-
+#publishes the frontier and visited nodes for RVIZ display while A* runs
 def dumpShit(q,p):
 	stuffz = []
 	stuffzOld = []
@@ -196,7 +206,7 @@ def dumpShit(q,p):
 	publishGrid(stuffz,'frontier')
 	publishGrid(stuffzOld, 'visited')
 
-
+#publishes a grid with the given type (visited or frontier)
 def publishGrid(cells, type):
 	global frontier_pub
 	gridMsg = GridCells()
@@ -210,7 +220,7 @@ def publishGrid(cells, type):
 	elif type == 'visited':
 		visited_pub.publish(gridMsg)
 
-
+#makes a point given an x and y 
 def makeGridCell(x, y):
 	point = Point()
 	point.x = x
