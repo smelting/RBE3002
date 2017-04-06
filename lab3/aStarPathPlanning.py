@@ -1,6 +1,7 @@
 
 import math, rospy
 from Queue import PriorityQueue
+import heapq
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -29,7 +30,7 @@ class Node:
 
 
 	def neighbors(self):
-		neighbors = [(self.x+res, self.y), (self.x, self.y-res), (self.x-res, self.y), (self.x,self.y+res)]
+		neighbors = [(self.x+res, self.y), (self.x, self.y-res), (self.x-res, self.y), (self.x,self.y+res),(self.x+res,self.y+res),(self.x-res,self.y+res),(self.x-res,self.y-res),(self.x+res,self.y-res)]
 		neighbors = filter(self.inBounds, neighbors)
 		neighbors = filter(open, neighbors)
 		return neighbors
@@ -121,10 +122,27 @@ def publishPath(p):
 def genPath(start,goal):
 	path = []
 	current = goal
+	prevSlope = 0
+	prevNode = goal
+	path.append(goal)
 	while current != start:
-		path.append(current)
+		newSlope = calcSlope(current,prevNode)
+		print "new slope %f Old %f " % (newSlope, prevSlope)
+		if(newSlope != prevSlope):
+			path.append(prevNode)
+		prevNode = current
+		prevSlope = newSlope
 		current = grid[matchPoseIndex(current)].parent
 	return path
+
+def calcSlope(p,b):
+	(x1,y1) = p
+	(x2,y2) = b
+	if(x1 - x2 == 0 and (y1 - y2 != 0)):
+		return float('inf')
+	elif(y1 - y2 == 0):
+		return 0
+	return (y1-y2)/(x1-x2)
 
 def a_star_search(start, goal):
 
@@ -132,15 +150,15 @@ def a_star_search(start, goal):
 	front = {}
 	goal = matchGridPose(goal)
 	start = matchGridPose(start)
-	frontier = PriorityQueue()
+	frontier = []
 	print "i: %f %f %f" % (matchPoseIndex(start),grid[matchPoseIndex(start)].x,grid[matchPoseIndex(start)].y)
-	frontier.put((0,grid[matchPoseIndex(start)]))
+	heapq.heappush(frontier,(0,grid[matchPoseIndex(start)]))
 	front[matchPoseIndex(start)] = start 
 	visited = []
 	
 	print "starting A* at x %f y %f" % (start)
-	while not frontier.empty():
-		(p,current) = frontier.get()
+	while 1:
+		(p,current) = heapq.heappop(frontier)
 		if matchPoseIndex((current.x,current.y)) in front:
 			del front[matchPoseIndex((current.x,current.y))]
 		dumpShit(front,visited)
@@ -151,10 +169,10 @@ def a_star_search(start, goal):
 			newCost = current.cost + res
 			if grid[matchPoseIndex(next)] not in visited or newCost < grid[matchPoseIndex(next)].cost:
 				grid[matchPoseIndex(next)].cost = newCost
-				priority = newCost + heuristic(goal, next)*2
+				priority = newCost + heuristic(goal, next)*1.5
 				#print "cost %f Heuristic %f  %f  x: %f y: %f" % (newCost, heuristic(goal, next), priority, next[0], next[1])
 				front[matchPoseIndex(next)] = next 
-				frontier.put((priority,grid[matchPoseIndex(next)]))
+				heapq.heappush(frontier,(priority,grid[matchPoseIndex(next)]))
 				grid[matchPoseIndex(next)].parent = (current.x,current.y)
 				visited.append(grid[matchPoseIndex(next)])
 				#rospy.sleep(0.001)
