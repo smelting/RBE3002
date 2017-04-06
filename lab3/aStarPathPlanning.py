@@ -5,6 +5,7 @@ from geometry_msgs.msg import Point
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from geometry_msgs.msg import Pose
+from nav_msgs.msg import Path
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import GridCells
@@ -99,6 +100,23 @@ def mapCallBack(msg):
 			count += 1
 			countCol += 1
 
+def publishPath(p):
+	poseArray = []
+	msg = Path()
+	count = 0
+	for thing in p:
+		newPose = PoseStamped()
+		newPose.pose.position.x = thing[0]
+		newPose.pose.position.y = thing[1]
+		newPose.header.seq = count
+		newPose.header.frame_id = 'map'
+		count += 1
+		poseArray.append(newPose)
+	msg.poses = poseArray
+	msg.header.frame_id = '/map'
+	path_pub.publish(msg)
+
+
 
 def genPath(start,goal):
 	path = []
@@ -106,8 +124,6 @@ def genPath(start,goal):
 	while current != start:
 		path.append(current)
 		current = grid[matchPoseIndex(current)].parent
-		print "next x %f y %f" % (current)
-		rospy.sleep(0.0001)
 	return path
 
 def a_star_search(start, goal):
@@ -125,8 +141,9 @@ def a_star_search(start, goal):
 	print "starting A* at x %f y %f" % (start)
 	while not frontier.empty():
 		(p,current) = frontier.get()
-		#del front[matchPoseIndex((current.x,current.y))]
-		dumpShit(front)
+		if matchPoseIndex((current.x,current.y)) in front:
+			del front[matchPoseIndex((current.x,current.y))]
+		dumpShit(front,visited)
 		#print "current: x %f y %f" %(current.x,current.y)
 		if(current.x == goal[0] and current.y == goal[1]):
 			break
@@ -142,20 +159,25 @@ def a_star_search(start, goal):
 				visited.append(grid[matchPoseIndex(next)])
 				#rospy.sleep(0.001)
 	newGoal = False
+	dumpShit(front,visited)
 	print "done with A*"
-	return genPath(start,goal)
+	publishPath(genPath(start,goal))
 
 
 
-def dumpShit(q):
+def dumpShit(q,p):
 	stuffz = []
+	stuffzOld = []
 	for key in q:
 		(x,y) = q[key]
 		newPoint = makeGridCell(x,y)
 		stuffz.append(newPoint)
-		#print "Added %f %f" % (x,y)
-		#rospy.sleep(.00001)
+	for place in p:
+		newPoint = makeGridCell(place.x,place.y)
+		stuffzOld.append(newPoint)
 	publishGrid(stuffz,'frontier')
+	publishGrid(stuffzOld, 'visited')
+
 
 def publishGrid(cells, type):
 	global frontier_pub
@@ -169,8 +191,6 @@ def publishGrid(cells, type):
 		frontier_pub.publish(gridMsg)
 	elif type == 'visited':
 		visited_pub.publish(gridMsg)
-	elif type == 'notVisited':
-		open_pub.publish(gridMsg)
 
 
 def makeGridCell(x, y):
@@ -193,9 +213,9 @@ if __name__ == '__main__':
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
 
-	frontier_pub = rospy.Publisher('/lab3/frontier', GridCells, queue_size = 1)
+	frontier_pub = rospy.Publisher('/lab3/frontier', GridCells, queue_size = 10)
 	visited_pub = rospy.Publisher('/lab3/visited', GridCells, queue_size = 1)
-	open_pub = rospy.Publisher('/lab3/open', GridCells, queue_size = 1)
+	path_pub = rospy.Publisher('/lab3/path', Path, queue_size = 1)
 
 	while(1):
 		rospy.sleep(0.1)
