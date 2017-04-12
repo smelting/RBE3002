@@ -14,6 +14,7 @@ from geometry_msgs.msg import Point
 
 expandThreshold = 60
 expandBuffer = 0.254
+expandedGridRes = 0.1
 
 #class for each node on the map grid
 class Node:
@@ -87,6 +88,7 @@ def mapCallBack(msg):
 	global height
 	global res
 	global gridOrigin
+	global newMap
 	grid = []
 	width = msg.info.width
 	height = msg.info.height
@@ -111,29 +113,48 @@ def mapCallBack(msg):
 			count += 1
 			countCol += 1
 	expandMap()
+	newMap = True
 
 def expandMap():
 	global expandedMap
 	expandedMap = []
-	expandedMap = copy.deepcopy(grid)
+	added = False
+	for i in range(0,int(height/(expandedGridRes/res))):
+		for j in range(0, int(width/(expandedGridRes/res))):
+			added = False
+			for y in range(0, int(expandedGridRes/res)):
+				for x in range(0, int(expandedGridRes/res)):
+					if(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity > expandThreshold and added == False):
+						added =True
+						expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,100))
+					elif(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity < 0 and added == False):
+						added =True
+						expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,-1))
+					elif(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity >= 0 and added == False):
+						added =True
+						expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,0))
+	newWidth = int(width/(expandedGridRes/res))
+	newHeight = int(height/(expandedGridRes/res))
+	expandedMap2 = copy.deepcopy(expandedMap)
 	print "Expanded is %f" % len(expandedMap)
-	for i in range (0, height):
-		for j in range (0, width):
-			if (grid[j + (width * i)].intensity >= 100):
-				for k in range (j - int(round(expandBuffer/res)), j + int(round(expandBuffer/res)) + 1):
-					for l in range (i - int(round(expandBuffer/res)), i + int(round(expandBuffer/res))+1):
-						if (k > 0 and k < width and l > 0 and l < height):
+	print "expanded width %f height %f" % (newWidth,newHeight)
+	for i in range (0, newHeight):
+		for j in range (0, newWidth):
+			if (grid[j + (newWidth * i)].intensity >= 100):
+				for k in range (j - int(round(expandBuffer/expandedGridRes)), j + int(round(expandBuffer/expandedGridRes)) + 1):
+					for l in range (i - int(round(expandBuffer/expandedGridRes)), i + int(round(expandBuffer/expandedGridRes))+1):
+						if (k > 0 and k < newWidth and l > 0 and l < newHeight):
 							#print "Trying index %f  k %f l %f"  % (k + (width * l),k,l)
-							expandedMap[k + (width * l)].intensity = 100
+							expandedMap2[k + (newWidth * l)].intensity = 100
 	ocGrid = OccupancyGrid()
 	pub_map = []
 	meta = MapMetaData()
 	meta.map_load_time = rospy.Time.now()
-	meta.width = width
-	meta.height = height
-	meta.resolution = res
+	meta.width = newWidth
+	meta.height = newHeight
+	meta.resolution = expandedGridRes
 
-	for next in expandedMap:
+	for next in expandedMap2:
 		pub_map.append(next.intensity)
 	ocGrid.header.frame_id = '/map'
 	ocGrid.header.stamp = rospy.Time.now()
@@ -289,8 +310,10 @@ if __name__ == '__main__':
 	global setStart
 	global frontier_pub
 	global expanded_pub
+	global newMap
 	setStart = False
 	newGoal = False
+	newMap = False
 
 	rospy.Subscriber("/move_base_simple/goal",PoseStamped, goalPoseCallback, queue_size = 1)
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
@@ -305,7 +328,6 @@ if __name__ == '__main__':
 
 	while(1):
 		rospy.sleep(0.1)
-		if(newGoal):
+		while(newMap and newGoal):
 			a_star_search((startPose.position.x,startPose.position.y),(goalPose.position.x,goalPose.position.y))
-			
-			newGoal = False
+			newMap = False
