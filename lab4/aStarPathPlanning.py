@@ -94,15 +94,15 @@ def mapCallBack(msg):
 	print "grid res is %f m" % res
 	print "width %f height %f" % (width,height)
 	countCol = 0
-	countRow = 1
+	countRow = 0
 	startX = msg.info.origin.position.x
 	startY = msg.info.origin.position.y
 	gridOrigin = msg.info.origin
 	print "0,0   %f  %f " % (startX,startY)
 	count = 0
 	for new in msg.data:
-		x = (countCol - 1)*res
-		y = (countRow - 1)*res
+		x = (countCol)*res
+		y = (countRow)*res
 		if(countCol == width): #hit the end of the column
 			countRow = countRow + 1
 			countCol = 0
@@ -167,7 +167,7 @@ def genPath(start,goal):
 	prevSlope = 0
 	prevNode = goal
 	path.append(goal)
-	while current != start:
+	while current != start and not rospy.is_shutdown():
 		newSlope = calcSlope(current,prevNode)
 		print "new slope %f Old %f " % (newSlope, prevSlope)
 		if(newSlope != prevSlope):
@@ -195,13 +195,13 @@ def a_star_search(start, goal):
 	goal = matchGridPose(goal)
 	start = matchGridPose(start)
 	frontier = []
-	print "i: %f %f %f" % (matchPoseIndex(start),grid[matchPoseIndex(start)].x,grid[matchPoseIndex(start)].y)
-	heapq.heappush(frontier,(0,grid[matchPoseIndex(start)]))
+	print "i: %f %f %f" % (matchPoseIndex(start),expandedMap[matchPoseIndex(start)].x,expandedMap[matchPoseIndex(start)].y)
+	heapq.heappush(frontier,(0,expandedMap[matchPoseIndex(start)]))
 	front[matchPoseIndex(start)] = start 
 	visited = []
 	
 	print "starting A* at x %f y %f" % (start)
-	while 1:
+	while 1 and not rospy.is_shutdown():
 		(p,current) = heapq.heappop(frontier)
 		if matchPoseIndex((current.x,current.y)) in front:
 			del front[matchPoseIndex((current.x,current.y))]
@@ -212,14 +212,14 @@ def a_star_search(start, goal):
 		for next in current.neighbors():
 			moveCost = math.sqrt(math.pow(current.x - next[0],2) + math.pow(current.y - next[1],2))
 			newCost = current.cost + moveCost
-			if (grid[matchPoseIndex(next)] not in visited or newCost < grid[matchPoseIndex(next)].cost) and grid[matchPoseIndex(next)] not in visited:
-				grid[matchPoseIndex(next)].cost = newCost
-				priority = newCost + heuristic(goal, next)
+			if (expandedMap[matchPoseIndex(next)] not in visited or newCost < expandedMap[matchPoseIndex(next)].cost) and expandedMap[matchPoseIndex(next)] not in visited:
+				expandedMap[matchPoseIndex(next)].cost = newCost
+				priority = newCost + heuristic(goal, next) + costMap[matchPoseIndex(next)]
 				#print "cost %f Heuristic %f  %f  x: %f y: %f" % (newCost, heuristic(goal, next), priority, next[0], next[1])
 				front[matchPoseIndex(next)] = next 
-				heapq.heappush(frontier,(priority,grid[matchPoseIndex(next)]))
-				grid[matchPoseIndex(next)].parent = (current.x,current.y)
-				visited.append(grid[matchPoseIndex(next)])
+				heapq.heappush(frontier,(priority,expandedMap[matchPoseIndex(next)]))
+				expandedMap[matchPoseIndex(next)].parent = (current.x,current.y)
+				visited.append(expandedMap[matchPoseIndex(next)])
 				#rospy.sleep(0.001)
 	newGoal = False
 	dumpShit(front,visited)
@@ -264,20 +264,23 @@ def makeGridCell(x, y):
 	return point
 
 def globalCostmapUpdate(data):
-	global globalCostMapGrid
-	globalCostMapGrid = OccupancyGrid()
-	
-	globalCostMapUpdate = data
-	
-	mapWidth = globalCostMapGrid.info.width
-	mapHeight = globalCostMapGrid.info.height
-	
-	if len(globalCostMapGrid.data) > 0:
-		mapData = list(globalCostMapGrid.data)
-		for y in range(0, data.height):
-			for x in range(0, data.width):
-				mapData[((y + data.y) * mapWidth) + x + data.x] = data.data[(y * data.width) + x]
-		globalCostMapGrid.data = tuple(mapData)
+	global costMap
+	costMap = []
+	mapWidth = data.info.width
+	mapHeight = data.info.height
+	costRes = data.info.resolution
+	countCol = 0
+	countRow = 1
+	print "costMap height %f weight %f" % (data.info.height,data.info.width)
+	for new in data.data:
+		x = (countCol - 1)*costRes
+		y = (countRow - 1)*costRes
+		if(countCol == mapWidth): #hit the end of the column
+			countRow = countRow + 1
+			countCol = 0
+		if(countRow <= mapHeight):
+			costMap.append(new)
+			countCol += 1
 
 
 if __name__ == '__main__':
@@ -292,7 +295,7 @@ if __name__ == '__main__':
 	rospy.Subscriber("/move_base_simple/goal",PoseStamped, goalPoseCallback, queue_size = 1)
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
-	rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, globalCostmapUpdate, queue_size = 1)
+	rospy.Subscriber("/move_base/global_costmap/costmap", OccupancyGrid, globalCostmapUpdate, queue_size = 1)
 
 	expanded_pub = rospy.Publisher("lab4/map",OccupancyGrid, queue_size = 1)
 
