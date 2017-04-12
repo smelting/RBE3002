@@ -64,21 +64,20 @@ def heuristic(a, b):
 	return math.sqrt(math.pow(x1-x2,2) + math.pow(y1-y2,2))
 
 #moves a point to the nearest grid position
-def matchGridPose(p):
-	global res
+def matchGridPose(p,resD):
 	(x,y) = p
-	(x,y) = (round(x/res), round(y/res))
-	return (x*res, y*res)
+	(x,y) = (round(x/resD), round(y/resD))
+	return (x*resD, y*resD)
 
 #determines where a point is in the grid array
-def matchPoseIndex(p):
+def matchPoseIndex(p,resD,widthD):
 	(x,y) = p
-	ticks = x/res + (y/res*width)
+	ticks = x/resD + (y/resD*widthD)
 	return int(ticks)
 
 #determines if the point is open (not blocked)
 def open(p):
-	return grid[matchPoseIndex(p)].intensity != 100
+	return grid[matchPoseIndex(p,res,width)].intensity != 100
 
 #interpret a map and create the grid using the width/height and map info
 def mapCallBack(msg):
@@ -117,24 +116,24 @@ def mapCallBack(msg):
 
 def expandMap():
 	global expandedMap
+	global expandedWidth
 	expandedMap = []
 	added = False
+	block = False
 	for i in range(0,int(height/(expandedGridRes/res))):
 		for j in range(0, int(width/(expandedGridRes/res))):
-			added = False
+			block = False
 			for y in range(0, int(expandedGridRes/res)):
 				for x in range(0, int(expandedGridRes/res)):
-					if(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity > expandThreshold and added == False):
-						added =True
-						expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,100))
-					elif(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity < 0 and added == False):
-						added =True
-						expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,-1))
-					elif(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity >= 0 and added == False):
-						added =True
-						expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,0))
+					if(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity > expandThreshold):
+						block =True
+			if(block):
+				expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,100))
+			else:
+				expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,0))
 	newWidth = int(width/(expandedGridRes/res))
 	newHeight = int(height/(expandedGridRes/res))
+	expandedWidth = newWidth
 	expandedMap2 = copy.deepcopy(expandedMap)
 	print "Expanded is %f" % len(expandedMap)
 	print "expanded width %f height %f" % (newWidth,newHeight)
@@ -154,7 +153,7 @@ def expandMap():
 	meta.height = newHeight
 	meta.resolution = expandedGridRes
 
-	for next in expandedMap2:
+	for next in expandedMap:
 		pub_map.append(next.intensity)
 	ocGrid.header.frame_id = '/map'
 	ocGrid.header.stamp = rospy.Time.now()
@@ -195,7 +194,7 @@ def genPath(start,goal):
 			path.append(prevNode)
 		prevNode = current
 		prevSlope = newSlope
-		current = grid[matchPoseIndex(current)].parent
+		current = grid[matchPoseIndex(current,expandedGridRes,expandedWidth)].parent
 	return path
 
 #calculates the slope between 2 points, returns inf when verticle
@@ -213,19 +212,19 @@ def a_star_search(start, goal):
 
 	global newGoal
 	front = {}
-	goal = matchGridPose(goal)
-	start = matchGridPose(start)
+	goal = matchGridPose(goal,expandedGridRes)
+	start = matchGridPose(start,expandedGridRes)
 	frontier = []
-	print "i: %f %f %f" % (matchPoseIndex(start),expandedMap[matchPoseIndex(start)].x,expandedMap[matchPoseIndex(start)].y)
-	heapq.heappush(frontier,(0,expandedMap[matchPoseIndex(start)]))
-	front[matchPoseIndex(start)] = start 
+	print "i: %f %f %f" % (matchPoseIndex(start,expandedGridRes,expandedWidth),expandedMap[matchPoseIndex(start,expandedGridRes,expandedWidth)].x,expandedMap[matchPoseIndex(start,expandedGridRes,expandedWidth)].y)
+	heapq.heappush(frontier,(0,expandedMap[matchPoseIndex(start,expandedGridRes,expandedWidth)]))
+	front[matchPoseIndex(start,expandedGridRes,expandedWidth)] = start 
 	visited = []
 	
 	print "starting A* at x %f y %f" % (start)
 	while 1 and not rospy.is_shutdown():
 		(p,current) = heapq.heappop(frontier)
-		if matchPoseIndex((current.x,current.y)) in front:
-			del front[matchPoseIndex((current.x,current.y))]
+		if matchPoseIndex((current.x,current.y),expandedGridRes,expandedWidth) in front:
+			del front[matchPoseIndex((current.x,current.y),expandedGridRes,expandedWidth)]
 		dumpShit(front,visited)
 		#print "current: x %f y %f" %(current.x,current.y)
 		if(current.x == goal[0] and current.y == goal[1]):
@@ -233,14 +232,14 @@ def a_star_search(start, goal):
 		for next in current.neighbors():
 			moveCost = math.sqrt(math.pow(current.x - next[0],2) + math.pow(current.y - next[1],2))
 			newCost = current.cost + moveCost
-			if (expandedMap[matchPoseIndex(next)] not in visited or newCost < expandedMap[matchPoseIndex(next)].cost) and expandedMap[matchPoseIndex(next)] not in visited:
-				expandedMap[matchPoseIndex(next)].cost = newCost
-				priority = newCost + heuristic(goal, next) + costMap[matchPoseIndex(next)]
+			if (expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)] not in visited or newCost < expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)].cost) and expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)] not in visited:
+				expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)].cost = newCost
+				priority = newCost + heuristic(goal, next) + costMap[matchPoseIndex(next,expandedGridRes,expandedWidth)]
 				#print "cost %f Heuristic %f  %f  x: %f y: %f" % (newCost, heuristic(goal, next), priority, next[0], next[1])
-				front[matchPoseIndex(next)] = next 
-				heapq.heappush(frontier,(priority,expandedMap[matchPoseIndex(next)]))
-				expandedMap[matchPoseIndex(next)].parent = (current.x,current.y)
-				visited.append(expandedMap[matchPoseIndex(next)])
+				front[matchPoseIndex(next,expandedGridRes,expandedWidth)] = next 
+				heapq.heappush(frontier,(priority,expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)]))
+				expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)].parent = (current.x,current.y)
+				visited.append(expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)])
 				#rospy.sleep(0.001)
 	newGoal = False
 	dumpShit(front,visited)
