@@ -116,10 +116,15 @@ def expandMap()
 	global expandedMap
 	expandedMap = []
 	for next in grid:
-		expandMap.append(next)
-	for next in grid:
-		if next.intensity > expandThreshold:
-			
+		expandedMap.append(next)
+	for i in range (0, height):
+		for j in range (0, width):
+			if (grid[j + (width * i)].intensity >= 50):
+				for k in range (j - 2, j + 3):
+					for l in range (i - 2, i + 3):
+						if (k > 0 and k < width and l > 0 and l < height):
+							expandedMap[k + (width * l)].intensity = 100
+	
 
 
 #publish the path that A* creates (only important landmarks)
