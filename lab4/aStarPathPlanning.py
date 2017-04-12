@@ -12,6 +12,9 @@ from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import GridCells
 from geometry_msgs.msg import Point
 
+expandThreshold = 60
+expandBuffer = .254
+
 #class for each node on the map grid
 class Node:
 
@@ -107,6 +110,17 @@ def mapCallBack(msg):
 			grid.append(Node(x,y,new))
 			count += 1
 			countCol += 1
+
+def expandMap()
+	global grid
+	global expandedMap
+	expandedMap = []
+	for next in grid:
+		expandMap.append(next)
+	for next in grid:
+		if next.intensity > expandThreshold:
+			
+
 
 #publish the path that A* creates (only important landmarks)
 def publishPath(p):
@@ -230,22 +244,20 @@ def makeGridCell(x, y):
 	return point
 
 def globalCostmapUpdate(data):
-    global globalCostMapUpdate
-    global globalCostMapGrid
-    globalCostMapGrid = OccupancyGrid()
-	globalCostMapUpdate = OccupancyGridUpdate()
+	global globalCostMapGrid
+	globalCostMapGrid = OccupancyGrid()
 	
-    globalCostMapUpdate = data
-    
-    mapWidth = globalCostMapGrid.info.width
-    mapHeight = globalCostMapGrid.info.height
-    
-    if len(globalCostMapGrid.data) > 0:
-        mapData = list(globalCostMapGrid.data)
-        for y in range(0, data.height):
-            for x in range(0, data.width):
-                mapData[((y + data.y) * mapWidth) + x + data.x] = data.data[(y * data.width) + x]
-        globalCostMapGrid.data = tuple(mapData)
+	globalCostMapUpdate = data
+	
+	mapWidth = globalCostMapGrid.info.width
+	mapHeight = globalCostMapGrid.info.height
+	
+	if len(globalCostMapGrid.data) > 0:
+		mapData = list(globalCostMapGrid.data)
+		for y in range(0, data.height):
+			for x in range(0, data.width):
+				mapData[((y + data.y) * mapWidth) + x + data.x] = data.data[(y * data.width) + x]
+		globalCostMapGrid.data = tuple(mapData)
 
 
 if __name__ == '__main__':
@@ -259,7 +271,7 @@ if __name__ == '__main__':
 	rospy.Subscriber("/move_base_simple/goal",PoseStamped, goalPoseCallback, queue_size = 1)
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
-	rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, costMapCallback, queue_size = 1)
+	rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, globalCostmapUpdate, queue_size = 1)
 
 	frontier_pub = rospy.Publisher('/lab3/frontier', GridCells, queue_size = 10)
 	visited_pub = rospy.Publisher('/lab3/visited', GridCells, queue_size = 1)
