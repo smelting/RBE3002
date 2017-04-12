@@ -179,7 +179,7 @@ def a_star_search(start, goal):
 			newCost = current.cost + res
 			if grid[matchPoseIndex(next)] not in visited or newCost < grid[matchPoseIndex(next)].cost:
 				grid[matchPoseIndex(next)].cost = newCost
-				priority = newCost + heuristic(goal, next)*1.5
+				priority = newCost + heuristic(goal, next)*3
 				#print "cost %f Heuristic %f  %f  x: %f y: %f" % (newCost, heuristic(goal, next), priority, next[0], next[1])
 				front[matchPoseIndex(next)] = next 
 				heapq.heappush(frontier,(priority,grid[matchPoseIndex(next)]))

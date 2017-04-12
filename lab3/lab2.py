@@ -23,8 +23,8 @@ def navToPose(goal):
 	busy = True
 	goalPose = Pose() #pose to end at
 
-	goalPose.position.x = goal.pose.position.x
-	goalPose.position.y = goal.pose.position.y
+	goalPose.position.x = goal.pose.position.x - xPosStart
+	goalPose.position.y = goal.pose.position.y - yPosStart
 	orientation = goal.pose.orientation
 	q = [orientation.x,orientation.y,orientation.z,orientation.w]
 	roll, pitch, yaw = tf.transformations.euler_from_quaternion(q)
@@ -33,9 +33,10 @@ def navToPose(goal):
 	x = goalPose.position.x - pose.position.x #distance to go in x
 	y = goalPose.position.y - pose.position.y #distance to go in y
 	print "Goal x: %f y: %f theta: %f" % (x,y,thetaGoal)
+	print "starting at x %f y %f" % (xPos,yPos)
 
 	angle = math.atan2(y,x)  #angle in global needed to drive to desired point
-	angle = math.degrees(angle)
+	angle = math.degrees(angle) 
 	print "rotating to goal %f" % angle
 	rotate(angle) #rotate to point at goal point
 	distanceToGo = calcDistance(goalPose,pose) #drive to the point
@@ -193,7 +194,7 @@ def startPoseCallback(data):
 
 def pathCallback(data):
 	
-	for next in data.reverse():
+	for next in data.poses:
 		navToPose(next)
 
 
@@ -212,12 +213,12 @@ if __name__ == '__main__':
     busy = False #if the robot is busy, used so that the bumper doesn't trigger while navigating to a path
     pose = Pose() 
     # Replace the elipses '...' in the following lines to set up the publishers and subscribers the lab requires
-    rospy.subscriber('lab3/path', Path, pathCallback, queue_size = 1)
+    rospy.Subscriber('lab3/path', Path, pathCallback, queue_size = 1)
     rospy.Subscriber('initialpose', PoseWithCovarianceStamped, startPoseCallback, queue_size = 1) #initial pose subscriber
     pub = rospy.Publisher('cmd_vel_mux/input/teleop', Twist, queue_size = 1) # Publisher for commanding robot motion
     pos_pub = rospy.Publisher("/lab2/pose",PoseStamped, queue_size = 1) #poseStamped for visualization in rviz
     bumper_sub = rospy.Subscriber('mobile_base/events/bumper', BumperEvent, readBumper, queue_size=1) # Callback function to handle bumper events
-    nav_sub = rospy.Subscriber("/move_base_simple/goal",PoseStamped, navToPose, queue_size = 1) #subcribe to the 2d nav goals in rviz
+   # nav_sub = rospy.Subscriber("/move_base_simple/goal",PoseStamped, navToPose, queue_size = 1) #subcribe to the 2d nav goals in rviz
     # Use this object to get the robot's Odometry 
     odom_list = tf.TransformListener()
     
