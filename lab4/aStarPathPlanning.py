@@ -1,5 +1,5 @@
 
-import math, rospy
+import math, rospy, copy
 from Queue import PriorityQueue
 import heapq
 from geometry_msgs.msg import Point
@@ -13,7 +13,7 @@ from nav_msgs.msg import GridCells
 from geometry_msgs.msg import Point
 
 expandThreshold = 60
-expandBuffer = .254
+expandBuffer = 0.254
 
 #class for each node on the map grid
 class Node:
@@ -93,7 +93,7 @@ def mapCallBack(msg):
 	res = msg.info.resolution
 	print "grid res is %f m" % res
 	print "width %f height %f" % (width,height)
-	countCol = 1
+	countCol = 0
 	countRow = 1
 	startX = msg.info.origin.position.x
 	startY = msg.info.origin.position.y
@@ -110,21 +110,36 @@ def mapCallBack(msg):
 			grid.append(Node(x,y,new))
 			count += 1
 			countCol += 1
+	expandMap()
 
-def expandMap()
-	global grid
+def expandMap():
 	global expandedMap
 	expandedMap = []
-	for next in grid:
-		expandedMap.append(next)
+	expandedMap = copy.deepcopy(grid)
+	print "Expanded is %f" % len(expandedMap)
 	for i in range (0, height):
 		for j in range (0, width):
-			if (grid[j + (width * i)].intensity >= 50):
-				for k in range (j - 2, j + 3):
-					for l in range (i - 2, i + 3):
+			if (grid[j + (width * i)].intensity >= 100):
+				for k in range (j - int(round(expandBuffer/res)), j + int(round(expandBuffer/res)) + 1):
+					for l in range (i - int(round(expandBuffer/res)), i + int(round(expandBuffer/res))+1):
 						if (k > 0 and k < width and l > 0 and l < height):
+							#print "Trying index %f  k %f l %f"  % (k + (width * l),k,l)
 							expandedMap[k + (width * l)].intensity = 100
-	
+	ocGrid = OccupancyGrid()
+	pub_map = []
+	meta = MapMetaData()
+	meta.map_load_time = rospy.Time.now()
+	meta.width = width
+	meta.height = height
+	meta.resolution = res
+
+	for next in expandedMap:
+		pub_map.append(next.intensity)
+	ocGrid.header.frame_id = '/map'
+	ocGrid.header.stamp = rospy.Time.now()
+	ocGrid.info = meta
+	ocGrid.data = pub_map
+	expanded_pub.publish(ocGrid)
 
 
 #publish the path that A* creates (only important landmarks)
@@ -270,6 +285,7 @@ if __name__ == '__main__':
 	global newGoal
 	global setStart
 	global frontier_pub
+	global expanded_pub
 	setStart = False
 	newGoal = False
 
@@ -277,6 +293,8 @@ if __name__ == '__main__':
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
 	rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, globalCostmapUpdate, queue_size = 1)
+
+	expanded_pub = rospy.Publisher("lab4/map",OccupancyGrid, queue_size = 1)
 
 	frontier_pub = rospy.Publisher('/lab3/frontier', GridCells, queue_size = 10)
 	visited_pub = rospy.Publisher('/lab3/visited', GridCells, queue_size = 1)
