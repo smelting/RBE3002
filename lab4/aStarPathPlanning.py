@@ -176,10 +176,11 @@ def a_star_search(start, goal):
 		if(current.x == goal[0] and current.y == goal[1]):
 			break
 		for next in current.neighbors():
-			newCost = current.cost + res
-			if grid[matchPoseIndex(next)] not in visited or newCost < grid[matchPoseIndex(next)].cost:
+			moveCost = math.sqrt(math.pow(current.x - next[0],2) + math.pow(current.y - next[1],2))
+			newCost = current.cost + moveCost
+			if (grid[matchPoseIndex(next)] not in visited or newCost < grid[matchPoseIndex(next)].cost) and grid[matchPoseIndex(next)] not in visited:
 				grid[matchPoseIndex(next)].cost = newCost
-				priority = newCost + heuristic(goal, next)*1.5
+				priority = newCost + heuristic(goal, next)
 				#print "cost %f Heuristic %f  %f  x: %f y: %f" % (newCost, heuristic(goal, next), priority, next[0], next[1])
 				front[matchPoseIndex(next)] = next 
 				heapq.heappush(frontier,(priority,grid[matchPoseIndex(next)]))
@@ -228,6 +229,24 @@ def makeGridCell(x, y):
 	point.z = 0
 	return point
 
+def globalCostmapUpdate(data):
+    global globalCostMapUpdate
+    global globalCostMapGrid
+    globalCostMapGrid = OccupancyGrid()
+	globalCostMapUpdate = OccupancyGridUpdate()
+	
+    globalCostMapUpdate = data
+    
+    mapWidth = globalCostMapGrid.info.width
+    mapHeight = globalCostMapGrid.info.height
+    
+    if len(globalCostMapGrid.data) > 0:
+        mapData = list(globalCostMapGrid.data)
+        for y in range(0, data.height):
+            for x in range(0, data.width):
+                mapData[((y + data.y) * mapWidth) + x + data.x] = data.data[(y * data.width) + x]
+        globalCostMapGrid.data = tuple(mapData)
+
 
 if __name__ == '__main__':
 	rospy.init_node('Lab3_pathPlan')
@@ -240,6 +259,7 @@ if __name__ == '__main__':
 	rospy.Subscriber("/move_base_simple/goal",PoseStamped, goalPoseCallback, queue_size = 1)
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
+	rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, costMapCallback, queue_size = 1)
 
 	frontier_pub = rospy.Publisher('/lab3/frontier', GridCells, queue_size = 10)
 	visited_pub = rospy.Publisher('/lab3/visited', GridCells, queue_size = 1)
