@@ -45,9 +45,10 @@ def navToPose(goal):
 	print "driving to goal %f" % distanceToGo
 	driveStraight(.25,distanceToGo)
 	print "rotating to final pose %f" % thetaGoal
-	rotate(thetaGoal)
+	#rotate(thetaGoal)
 	print "Went to x: %f y: %f theta: %f" % (xPos,yPos,theta)
-	stop()
+	if navReady:
+		stop()
 	print "Done with navigation"
 	busy = False
 	
@@ -97,7 +98,7 @@ def stop():
 def driveStraight(speed, distance):
 	start_pose = pose
 	#print "Start x: %f y: %f" % (start_pose.position.x,start_pose.position.y)
-	while(calcDistance(pose,start_pose) < distance):
+	while(calcDistance(pose,start_pose) < distance and navReady):
 		#print "X: %f Y: %f" % (pose.position.x,pose.position.y)
 		#print "%f" % calcDistance(pose,start_pose)
 		#print "Pose: x: %f y: %f Dist: %f" % (pose.position.x,pose.position.y,calcDistance(pose,start_pose))
@@ -130,7 +131,7 @@ def rotate(angle):
 	#get within 1 degree of the desired angle
 	while(math.fabs(theta - angle) >= 1):
 		error = theta - angle
-		spinWheels(error*0.4,-error*0.4,.01)
+		spinWheels(error*0.6,-error*0.6,.01)
 		#print "Desired %f cur %f pwr: %f" % (angle, theta,error*0.4)
 	stop()
 
@@ -205,6 +206,14 @@ def odomCallBack(data):
 	goal.pose.position.y = yPos
 	goal.pose.orientation = pose.orientation
 	pos_pub.publish(goal)
+	
+def pathCallback(msg):
+	global hasPath
+	global navReady
+	global path
+	path = msg.poses
+	navReady = False
+	hasPath = True
 
 # This is the program's main function
 if __name__ == '__main__':
@@ -216,21 +225,26 @@ if __name__ == '__main__':
     global odom_tf
     global odom_list
     global pose
-
+    global path
     global busy
+    global navReady
+    global hasPath
+    hasPath = False
+    path = Path()
+    navReady = True
     busy = False
     pose = Pose()
     # Replace the elipses '...' in the following lines to set up the publishers and subscribers the lab requires
     pub = rospy.Publisher('cmd_vel_mux/input/teleop', Twist, queue_size = 1) # Publisher for commanding robot motion
     pos_pub = rospy.Publisher("/lab2/pose",PoseStamped, queue_size = 1)
-    bumper_sub = rospy.Subscriber('mobile_base/events/bumper', BumperEvent, readBumper, queue_size=1) # Callback function to handle bumper events
-    nav_sub = rospy.Subscriber("/move_base_simple/goal",PoseStamped, navToPose,)
+    #bumper_sub = rospy.Subscriber('mobile_base/events/bumper', BumperEvent, readBumper, queue_size=1) # Callback function to handle bumper events
+    #nav_sub = rospy.Subscriber("/move_base_simple/goal",PoseStamped, navToPose)
 
-    metaMap_sub = rospy.Subscriber('/map_metadata',MapMetaData,metaCallBack,queue_size = 1)
-    occupancy_sub = rospy.Subscriber('/map',occupancyCallBack, queue_size = 1)
+    #metaMap_sub = rospy.Subscriber('/map_metadata',MapMetaData,metaCallBack,queue_size = 1)
+    occupancy_sub = rospy.Subscriber('/map',OccupancyGrid ,occupancyCallBack, queue_size = 1)
     # Use this object to get the robot's Odometry 
     odom_list = tf.TransformListener()
-    
+    path_sub = rospy.Subscriber('lab3/path', Path, pathCallback)
     # Use this command to make the program wait for some seconds
     rospy.sleep(rospy.Duration(1, 0))
     print "Starting Lab 2"
@@ -240,9 +254,17 @@ if __name__ == '__main__':
     rospy.sleep(rospy.Duration(5, 0))
     #driveStraight(0.25,.5)
     #rotate(90)
-    driveArc(.5,.5,90)
-    while(1):
-    	rospy.sleep(.5)
+    #driveArc(.5,.5,90)
+    while(not hasPath):
+        rospy.sleep(.1)
+    print "received path"
+    navReady = True
+    while(1 and not rospy.is_shutdown()):
+        for next in path:
+            if navReady:
+                navToPose(next)
+            break
+        navReady = True
     # Make the robot do stuff...
     print "Lab 2 complete!"
 
