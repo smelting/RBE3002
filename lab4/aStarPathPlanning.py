@@ -1,5 +1,5 @@
 
-import math, rospy, copy
+import math, rospy, copy, tf
 from Queue import PriorityQueue
 import heapq
 from geometry_msgs.msg import Point
@@ -10,6 +10,7 @@ from nav_msgs.msg import Path
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import GridCells
+from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Point
 
 expandThreshold = 60
@@ -29,6 +30,8 @@ class Node:
 	#makes sure the node is within the bounds of the map
 	def inBounds(self, node):
 		(x,y) = node
+		x = x - gridOrigin.position.x
+		y = y - gridOrigin.position.y
 		return 0 <= x < (width/(expandedGridRes/res))*expandedGridRes and 0 <= y < (height/(expandedGridRes/res))*expandedGridRes
 
 	#finds and returns all neighbors (including diagonals)
@@ -70,6 +73,8 @@ def matchGridPose(p,resD):
 #determines where a point is in the grid array
 def matchPoseIndex(p,resD,widthD):
 	(x,y) = p
+	x = x - gridOrigin.position.x
+	y = y - gridOrigin.position.y
 	ticks = x/resD + (y/resD*widthD)
 	return int(ticks)
 
@@ -100,8 +105,8 @@ def mapCallBack(msg):
 	print "0,0   %f  %f " % (startX,startY)
 	count = 0
 	for new in msg.data:
-		x = (countCol)*res
-		y = (countRow)*res
+		x = (countCol)*res + gridOrigin.position.x
+		y = (countRow)*res + gridOrigin.position.y
 		if(countCol == width): #hit the end of the column
 			countRow = countRow + 1
 			countCol = 0
@@ -120,8 +125,8 @@ def expandMap():
 	print "Expanded is %f" % len(grid)
 	print "expanded width %f height %f" % (width,height)
 	for i in range (0, height):
-		for j in range (0, height):
-			if (grid[j + (height * i)].intensity >= 100):
+		for j in range (0, width):
+			if (grid[j + (width * i)].intensity >= 100):
 				for k in range (j - int(round(expandBuffer/res)), j + int(round(expandBuffer/res)) + 1):
 					for l in range (i - int(round(expandBuffer/res)), i + int(round(expandBuffer/res))+1):
 						if (k > 0 and k < width and l > 0 and l < height):
@@ -138,9 +143,9 @@ def expandMap():
 					if(expandedMap[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity > expandThreshold):
 						block =True
 			if(block):
-				expandedMap2.append(Node(j*expandedGridRes ,i*expandedGridRes,100))
+				expandedMap2.append(Node(j*expandedGridRes + gridOrigin.position.x,i*expandedGridRes + gridOrigin.position.y,100))
 			else:
-				expandedMap2.append(Node(j*expandedGridRes,i*expandedGridRes,0))
+				expandedMap2.append(Node(j*expandedGridRes + gridOrigin.position.x,i*expandedGridRes + gridOrigin.position.y,0))
 	newWidth = int(width/(expandedGridRes/res))
 	newHeight = int(height/(expandedGridRes/res))
 	expandedWidth = newWidth
@@ -158,6 +163,7 @@ def expandMap():
 	ocGrid.header.frame_id = '/map'
 	ocGrid.header.stamp = rospy.Time.now()
 	ocGrid.info = meta
+	ocGrid.info.origin = gridOrigin
 	ocGrid.data = pub_map
 	expanded_pub.publish(ocGrid)
 
@@ -187,9 +193,12 @@ def genPath(start,goal):
 	prevSlope = 0
 	prevNode = goal
 	path.append(goal)
-	while current != start and not rospy.is_shutdown():
+	print " start X %f Y: %f" % (start[0],start[1])
+	print " goal X %f Y %f" % (goal[0],goal[1])
+	while math.fabs(current[0] - start[0]) > 0.005 and math.fabs(current[1] - start[1]) > 0.005 and not rospy.is_shutdown():
 		newSlope = calcSlope(current,prevNode)
 		print "new slope %f Old %f " % (newSlope, prevSlope)
+		print "current pos x %f y %f" % (expandedMap2[matchPoseIndex(current,expandedGridRes,expandedWidth)].x,expandedMap2[matchPoseIndex(current,expandedGridRes,expandedWidth)].y)
 		if(newSlope != prevSlope):
 			path.append(prevNode)
 		prevNode = current
@@ -216,6 +225,8 @@ def a_star_search(start, goal):
 	start = matchGridPose(start,expandedGridRes)
 	frontier = []
 	print "i: %f %f %f" % (matchPoseIndex(start,expandedGridRes,expandedWidth),expandedMap2[matchPoseIndex(start,expandedGridRes,expandedWidth)].x,expandedMap2[matchPoseIndex(start,expandedGridRes,expandedWidth)].y)
+	print "START: X %f Y %f" % (start[0],start[1])
+	print "GOAL: x %f  y%f" % (goal[0],goal[1])
 	heapq.heappush(frontier,(0,expandedMap2[matchPoseIndex(start,expandedGridRes,expandedWidth)]))
 	front[matchPoseIndex(start,expandedGridRes,expandedWidth)] = start 
 	visited = {}
@@ -226,8 +237,8 @@ def a_star_search(start, goal):
 		if matchPoseIndex((current.x,current.y),expandedGridRes,expandedWidth) in front:
 			del front[matchPoseIndex((current.x,current.y),expandedGridRes,expandedWidth)]
 		dumpShit(front,visited)
-		#print "current: x %f y %f" %(current.x,current.y)
-		if(current.x == goal[0] and current.y == goal[1]):
+		print "current: x %f y %f" %(current.x,current.y)
+		if(math.fabs(current.x - goal[0]) < 0.005 and math.fabs(current.y - goal[1]) < 0.005):
 			break
 		for next in current.neighbors():
 			moveCost = math.sqrt(math.pow(current.x - next[0],2) + math.pow(current.y - next[1],2))
@@ -241,7 +252,6 @@ def a_star_search(start, goal):
 				expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].parent = (current.x,current.y)
 				visited[matchPoseIndex(next,expandedGridRes,expandedWidth)] = expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)]
 				#rospy.sleep(0.001)
-	newGoal = False
 	dumpShit(front,visited)
 	print "done with A*"
 	publishPath(genPath(start,goal))
@@ -283,6 +293,23 @@ def makeGridCell(x, y):
 	point.z = 0
 	return point
 
+
+def odomLit(data):
+	global xPos
+	global yPos
+	global theta
+	global pose
+	pose = Pose()
+	xPos = data.pose.pose.position.x
+	yPos = data.pose.pose.position.y
+	orientation = data.pose.pose.orientation
+	q = [orientation.x,orientation.y,orientation.z,orientation.w]
+	roll, pitch, yaw = tf.transformations.euler_from_quaternion(q)
+	theta = math.degrees(yaw)
+	pose.position.x = xPos
+	pose.position.y = yPos
+	pose.orientation = orientation
+
 def globalCostmapUpdate(data):
 	global costMap
 	costMap = []
@@ -318,6 +345,7 @@ if __name__ == '__main__':
 	rospy.Subscriber("/initialpose",PoseWithCovarianceStamped, startPoseCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
 	rospy.Subscriber("/move_base/global_costmap/costmap", OccupancyGrid, globalCostmapUpdate, queue_size = 1)
+	rospy.Subscriber('/odom',Odometry, odomLit, queue_size = 1)
 
 	expanded_pub = rospy.Publisher("lab4/map",OccupancyGrid, queue_size = 1)
 
@@ -328,5 +356,5 @@ if __name__ == '__main__':
 	while(1):
 		rospy.sleep(0.1)
 		while(newMap and newGoal):
-			a_star_search((startPose.position.x,startPose.position.y),(goalPose.position.x,goalPose.position.y))
+			a_star_search((xPos,yPos),(goalPose.position.x,goalPose.position.y))
 			newMap = False
