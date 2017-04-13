@@ -13,8 +13,8 @@ from nav_msgs.msg import GridCells
 from geometry_msgs.msg import Point
 
 expandThreshold = 60
-expandBuffer = 0.254
-expandedGridRes = 0.1
+expandBuffer = 0.125
+expandedGridRes = 0.2
 
 #class for each node on the map grid
 class Node:
@@ -28,14 +28,12 @@ class Node:
 		
 	#makes sure the node is within the bounds of the map
 	def inBounds(self, node):
-		global width
-		global height
 		(x,y) = node
-		return 0 <= x < width*res and 0 <= y < height*res
+		return 0 <= x < (width/(expandedGridRes/res))*expandedGridRes and 0 <= y < (height/(expandedGridRes/res))*expandedGridRes
 
 	#finds and returns all neighbors (including diagonals)
 	def neighbors(self):
-		neighbors = [(self.x+res, self.y), (self.x, self.y-res), (self.x-res, self.y), (self.x,self.y+res),(self.x+res,self.y+res),(self.x-res,self.y+res),(self.x-res,self.y-res),(self.x+res,self.y-res)]
+		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes),(self.x+expandedGridRes,self.y+expandedGridRes),(self.x-expandedGridRes,self.y+expandedGridRes),(self.x-expandedGridRes,self.y-expandedGridRes),(self.x+expandedGridRes,self.y-expandedGridRes)]
 		neighbors = filter(self.inBounds, neighbors)
 		neighbors = filter(open, neighbors)
 		return neighbors
@@ -77,7 +75,7 @@ def matchPoseIndex(p,resD,widthD):
 
 #determines if the point is open (not blocked)
 def open(p):
-	return grid[matchPoseIndex(p,res,width)].intensity != 100
+	return expandedMap2[matchPoseIndex(p,expandedGridRes,expandedWidth)].intensity != 100
 
 #interpret a map and create the grid using the width/height and map info
 def mapCallBack(msg):
@@ -116,8 +114,20 @@ def mapCallBack(msg):
 
 def expandMap():
 	global expandedMap
+	global expandedMap2
 	global expandedWidth
-	expandedMap = []
+	expandedMap = copy.deepcopy(grid)
+	print "Expanded is %f" % len(grid)
+	print "expanded width %f height %f" % (width,height)
+	for i in range (0, height):
+		for j in range (0, height):
+			if (grid[j + (height * i)].intensity >= 100):
+				for k in range (j - int(round(expandBuffer/res)), j + int(round(expandBuffer/res)) + 1):
+					for l in range (i - int(round(expandBuffer/res)), i + int(round(expandBuffer/res))+1):
+						if (k > 0 and k < width and l > 0 and l < height):
+							#print "Trying index %f  k %f l %f"  % (k + (width * l),k,l)
+							expandedMap[k + (width * l)].intensity = 100
+	expandedMap2 = []
 	added = False
 	block = False
 	for i in range(0,int(height/(expandedGridRes/res))):
@@ -125,26 +135,16 @@ def expandMap():
 			block = False
 			for y in range(0, int(expandedGridRes/res)):
 				for x in range(0, int(expandedGridRes/res)):
-					if(grid[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity > expandThreshold):
+					if(expandedMap[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity > expandThreshold):
 						block =True
 			if(block):
-				expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,100))
+				expandedMap2.append(Node(j*expandedGridRes ,i*expandedGridRes,100))
 			else:
-				expandedMap.append(Node(j*expandedGridRes,i*expandedGridRes,0))
+				expandedMap2.append(Node(j*expandedGridRes,i*expandedGridRes,0))
 	newWidth = int(width/(expandedGridRes/res))
 	newHeight = int(height/(expandedGridRes/res))
 	expandedWidth = newWidth
-	expandedMap2 = copy.deepcopy(expandedMap)
-	print "Expanded is %f" % len(expandedMap)
-	print "expanded width %f height %f" % (newWidth,newHeight)
-	for i in range (0, newHeight):
-		for j in range (0, newWidth):
-			if (grid[j + (newWidth * i)].intensity >= 100):
-				for k in range (j - int(round(expandBuffer/expandedGridRes)), j + int(round(expandBuffer/expandedGridRes)) + 1):
-					for l in range (i - int(round(expandBuffer/expandedGridRes)), i + int(round(expandBuffer/expandedGridRes))+1):
-						if (k > 0 and k < newWidth and l > 0 and l < newHeight):
-							#print "Trying index %f  k %f l %f"  % (k + (width * l),k,l)
-							expandedMap2[k + (newWidth * l)].intensity = 100
+
 	ocGrid = OccupancyGrid()
 	pub_map = []
 	meta = MapMetaData()
@@ -153,7 +153,7 @@ def expandMap():
 	meta.height = newHeight
 	meta.resolution = expandedGridRes
 
-	for next in expandedMap:
+	for next in expandedMap2:
 		pub_map.append(next.intensity)
 	ocGrid.header.frame_id = '/map'
 	ocGrid.header.stamp = rospy.Time.now()
@@ -194,7 +194,7 @@ def genPath(start,goal):
 			path.append(prevNode)
 		prevNode = current
 		prevSlope = newSlope
-		current = grid[matchPoseIndex(current,expandedGridRes,expandedWidth)].parent
+		current = expandedMap2[matchPoseIndex(current,expandedGridRes,expandedWidth)].parent
 	return path
 
 #calculates the slope between 2 points, returns inf when verticle
@@ -215,10 +215,10 @@ def a_star_search(start, goal):
 	goal = matchGridPose(goal,expandedGridRes)
 	start = matchGridPose(start,expandedGridRes)
 	frontier = []
-	print "i: %f %f %f" % (matchPoseIndex(start,expandedGridRes,expandedWidth),expandedMap[matchPoseIndex(start,expandedGridRes,expandedWidth)].x,expandedMap[matchPoseIndex(start,expandedGridRes,expandedWidth)].y)
-	heapq.heappush(frontier,(0,expandedMap[matchPoseIndex(start,expandedGridRes,expandedWidth)]))
+	print "i: %f %f %f" % (matchPoseIndex(start,expandedGridRes,expandedWidth),expandedMap2[matchPoseIndex(start,expandedGridRes,expandedWidth)].x,expandedMap2[matchPoseIndex(start,expandedGridRes,expandedWidth)].y)
+	heapq.heappush(frontier,(0,expandedMap2[matchPoseIndex(start,expandedGridRes,expandedWidth)]))
 	front[matchPoseIndex(start,expandedGridRes,expandedWidth)] = start 
-	visited = []
+	visited = {}
 	
 	print "starting A* at x %f y %f" % (start)
 	while 1 and not rospy.is_shutdown():
@@ -232,14 +232,14 @@ def a_star_search(start, goal):
 		for next in current.neighbors():
 			moveCost = math.sqrt(math.pow(current.x - next[0],2) + math.pow(current.y - next[1],2))
 			newCost = current.cost + moveCost
-			if (expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)] not in visited or newCost < expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)].cost) and expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)] not in visited:
-				expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)].cost = newCost
-				priority = newCost + heuristic(goal, next) + costMap[matchPoseIndex(next,expandedGridRes,expandedWidth)]
+			if ((not visited.has_key(matchPoseIndex(next,expandedGridRes,expandedWidth))) or newCost < expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].cost) and not visited.has_key(matchPoseIndex(next,expandedGridRes,expandedWidth)):
+				expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].cost = newCost
+				priority = newCost + heuristic(goal, next) + costMap[matchPoseIndex(next,res,width)]/80
 				#print "cost %f Heuristic %f  %f  x: %f y: %f" % (newCost, heuristic(goal, next), priority, next[0], next[1])
 				front[matchPoseIndex(next,expandedGridRes,expandedWidth)] = next 
-				heapq.heappush(frontier,(priority,expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)]))
-				expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)].parent = (current.x,current.y)
-				visited.append(expandedMap[matchPoseIndex(next,expandedGridRes,expandedWidth)])
+				heapq.heappush(frontier,(priority,expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)]))
+				expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].parent = (current.x,current.y)
+				visited[matchPoseIndex(next,expandedGridRes,expandedWidth)] = expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)]
 				#rospy.sleep(0.001)
 	newGoal = False
 	dumpShit(front,visited)
@@ -255,7 +255,7 @@ def dumpShit(q,p):
 		(x,y) = q[key]
 		newPoint = makeGridCell(x,y)
 		stuffz.append(newPoint)
-	for place in p:
+	for key,place in p.iteritems():
 		newPoint = makeGridCell(place.x,place.y)
 		stuffzOld.append(newPoint)
 	publishGrid(stuffz,'frontier')
@@ -267,8 +267,8 @@ def publishGrid(cells, type):
 	gridMsg = GridCells()
 	gridMsg.header.stamp = rospy.Time.now()
 	gridMsg.header.frame_id = '/map'
-	gridMsg.cell_width = res
-	gridMsg.cell_height = res
+	gridMsg.cell_width = expandedGridRes
+	gridMsg.cell_height = expandedGridRes
 	gridMsg.cells = cells
 	if type == 'frontier':
 		frontier_pub.publish(gridMsg)
