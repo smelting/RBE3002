@@ -1,8 +1,9 @@
-import math, tf, rospy
+import math, tf, rospy, copy
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import GridCells
 from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import Point
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseStamped
@@ -39,21 +40,21 @@ class Node:
 
 	def isFrontier(self):
 		if(self.intensity == -1):
+			print("intensity %f ") % self.intensity
 			for next in self.neighbors:
 				if(next.intensity == 0):
 					return True
+		return False
 
 class FrontierNode:
 	def __init__():
-		self.
-
+		pass
 	def function():
 		pass
 
 class Frontier:
 	def __init__():
-		self.
-
+		pass
 	def function():
 		pass
 
@@ -90,6 +91,7 @@ def mapCallBack(msg):
 			count += 1
 			countCol += 1
 	expandMap()
+	findFrontiers()
 	newMap = True
 
 def expandMap():
@@ -101,7 +103,7 @@ def expandMap():
 	print "expanded width %f height %f" % (width,height)
 	for i in range (0, height):
 		for j in range (0, width):
-			if (grid[j + (width * i)].intensity >= 100):
+			if (grid[j + (width * i)].intensity >= expandThreshold):
 				for k in range (j - int(round(expandBuffer/res)), j + int(round(expandBuffer/res)) + 1):
 					for l in range (i - int(round(expandBuffer/res)), i + int(round(expandBuffer/res))+1):
 						if (k > 0 and k < width and l > 0 and l < height):
@@ -110,20 +112,23 @@ def expandMap():
 	expandedMap2 = []
 	added = False
 	block = False
+	unknown = False
 	for i in range(0,int(height/(expandedGridRes/res))):
 		for j in range(0, int(width/(expandedGridRes/res))):
 			block = False
+			unknown = False
 			for y in range(0, int(expandedGridRes/res)):
 				for x in range(0, int(expandedGridRes/res)):
-					if(expandedMap[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity > expandThreshold):
+					if(expandedMap[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity == 100):
 						block =True
+					if(expandedMap[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity == -1):
+						unknown = True
 			if(block):
 				expandedMap2.append(Node(j*expandedGridRes + gridOrigin.position.x,i*expandedGridRes + gridOrigin.position.y,100))
+			elif(unknown):
+				expandedMap2.append(Node(j*expandedGridRes + gridOrigin.position.x,i*expandedGridRes + gridOrigin.position.y,-1))
 			else:
-				if(expandedMap[int(i*width*(expandedGridRes/res)+y*width+j*(expandedGridRes/res)+x)].intensity >= 0):
-					expandedMap2.append(Node(j*expandedGridRes + gridOrigin.position.x,i*expandedGridRes + gridOrigin.position.y,0))
-				else:
-					expandedMap2.append(Node(j*expandedGridRes + gridOrigin.position.x,i*expandedGridRes + gridOrigin.position.y,-1))
+				expandedMap2.append(Node(j*expandedGridRes + gridOrigin.position.x,i*expandedGridRes + gridOrigin.position.y,0))
 	newWidth = int(width/(expandedGridRes/res))
 	newHeight = int(height/(expandedGridRes/res))
 	expandedWidth = newWidth
@@ -164,10 +169,12 @@ def odomCallBack(data):
 	pose.orientation = orientation
 
 def statusCallback(msg):
-	global status
+	global status_num
+	global status_text
 	status = GoalStatusArray()
-	status = msg.status_list.goal_id
-	print(status)
+	status = msg
+	status_text = status.status_list[0].text
+	status_num = status.status_list[0].status
 
 def spin360():
 	startAngle = theta
@@ -186,21 +193,40 @@ def publishTwist(linear,angular):
 
 def findFrontiers():
 	frontiers = []
+	frontiers_points = []
 	for next in expandedMap2:
-		if(next.isFrontier):
+		if(next.isFrontier()):
 			frontiers.append(next)
+			frontiers_points.append(makeGridCell(next.x,next.y))
+	frontierGrid = GridCells()
+	frontierGrid.header.frame_id = '/map'
+	frontierGrid.header.stamp = rospy.Time.now()
+	frontierGrid.cell_width = expandedGridRes
+	frontierGrid.cell_height = expandedGridRes
+	frontierGrid.cells = frontiers_points
+	frontier_pub.publish(frontierGrid)
+	print("Frontiers found %f") %len(frontiers)
 	return frontiers
 
 def createBlobs(nodes):
 	for next in nodes:
 		frontierList = []
 
+def makeGridCell(x, y):
+	point = Point()
+	point.x = x
+	point.y = y
+	point.z = 0
+	return point
 
 
 
 if __name__ == '__main__':
 	rospy.init_node('Lab5')
-
+	global twistPub
+	global goalPub
+	global expanded_pub
+	global frontier_pub
 	#subscribers
 	rospy.Subscriber("/odom", Odometry, odomCallBack)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
@@ -210,6 +236,9 @@ if __name__ == '__main__':
 	twistPub = rospy.Publisher('cmd_vel_mux/input/teleop', Twist, queue_size = 1)
 	goalPub = rospy.Publisher('/move_base_simple/goal',PoseStamped, queue_size = 1)
 	expanded_pub = rospy.Publisher("lab5/map",OccupancyGrid, queue_size = 1)
+	frontier_pub = rospy.Publisher('/lab5/frontier', GridCells, queue_size = 1)
 
 
 	print("starting final project")
+	while(1):
+		rospy.sleep(1)
