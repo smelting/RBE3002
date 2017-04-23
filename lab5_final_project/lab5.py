@@ -213,6 +213,7 @@ def publishTwist(linear,angular):
 	twistPub.publish(twist)
 
 def findFrontiers():
+	global frontiers
 	frontiers = []
 	frontiers_points = []
 	for next in expandedMap2:
@@ -240,6 +241,16 @@ def makeGridCell(x, y):
 	point.y = y
 	point.z = 0
 	return point
+
+def nextGoal():
+	bestGoal = ()
+	bestDist = 0
+	for next in frontiers:
+		dist = math.hypot(pose.position.x - next.x, pose.position.y - next.y)
+		if(dist > bestDist):
+			bestDist = dist
+			bestGoal = (next.x, next.y)
+	return bestGoal
 
 
 
