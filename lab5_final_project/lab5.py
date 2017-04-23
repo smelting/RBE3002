@@ -11,7 +11,7 @@ from actionlib_msgs.msg import GoalStatusArray
 
 AngularSpeed = 1
 expandThreshold = 60
-expandBuffer = 0.250
+expandBuffer = 0.125
 expandedGridRes = 0.1
 
 
@@ -33,16 +33,17 @@ class Node:
 
 	#finds and returns all neighbors (including diagonals)
 	def neighbors(self):
-		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes),(self.x+expandedGridRes,self.y+expandedGridRes),(self.x-expandedGridRes,self.y+expandedGridRes),(self.x-expandedGridRes,self.y-expandedGridRes),(self.x+expandedGridRes,self.y-expandedGridRes)]
+		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes)]
 		neighbors = filter(self.inBounds, neighbors)
-		neighbors = filter(open, neighbors)
+		#neighbors = filter(open, neighbors)
 		return neighbors
 
 	def isFrontier(self):
 		if(self.intensity == -1):
 			for next in self.neighbors():
-				if(expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].intensity == 0):
-					return True
+				if(matchPoseIndex(next,expandedGridRes,expandedWidth) < expandedWidth*expandedHeight):
+					if(expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].intensity == 0):
+						return True
 		return False
 
 class FrontierNode:
@@ -97,6 +98,7 @@ def expandMap():
 	global expandedMap
 	global expandedMap2
 	global expandedWidth
+	global expandedHeight
 	expandedMap = copy.deepcopy(grid)
 	print "Expanded is %f" % len(grid)
 	print "expanded width %f height %f" % (width,height)
@@ -131,6 +133,7 @@ def expandMap():
 	newWidth = int(width/(expandedGridRes/res))
 	newHeight = int(height/(expandedGridRes/res))
 	expandedWidth = newWidth
+	expandedHeight = newHeight
 	print("expanded width %f") % expandedWidth
 	print("expanded Map2 Length %f") %len(expandedMap2) 
 
@@ -160,8 +163,8 @@ def matchGridPose(p,resD):
 #determines where a point is in the grid array
 def matchPoseIndex(p,resD,widthD):
 	(x,y) = p
-	x = x - gridOrigin.position.x - expandedGridRes
-	y = y - gridOrigin.position.y - expandedGridRes
+	x = x - gridOrigin.position.x
+	y = y - gridOrigin.position.y
 	ticks = x/resD + (y/resD*widthD)
 	return int(ticks)
 
@@ -214,8 +217,9 @@ def findFrontiers():
 	frontiers_points = []
 	for next in expandedMap2:
 		if(next.isFrontier()):
-			frontiers.append(next)
-			frontiers_points.append(makeGridCell(next.x,next.y))
+			if(next not in frontiers):
+				frontiers.append(next)
+				frontiers_points.append(makeGridCell(next.x,next.y))
 	frontierGrid = GridCells()
 	frontierGrid.header.frame_id = '/map'
 	frontierGrid.header.stamp = rospy.Time.now()
