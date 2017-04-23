@@ -11,8 +11,8 @@ from actionlib_msgs.msg import GoalStatusArray
 
 AngularSpeed = 1
 expandThreshold = 60
-expandBuffer = 0.125
-expandedGridRes = 0.2
+expandBuffer = 0.250
+expandedGridRes = 0.1
 
 
 class Node:
@@ -40,9 +40,8 @@ class Node:
 
 	def isFrontier(self):
 		if(self.intensity == -1):
-			print("intensity %f ") % self.intensity
-			for next in self.neighbors:
-				if(next.intensity == 0):
+			for next in self.neighbors():
+				if(expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].intensity == 0):
 					return True
 		return False
 
@@ -132,6 +131,8 @@ def expandMap():
 	newWidth = int(width/(expandedGridRes/res))
 	newHeight = int(height/(expandedGridRes/res))
 	expandedWidth = newWidth
+	print("expanded width %f") % expandedWidth
+	print("expanded Map2 Length %f") %len(expandedMap2) 
 
 	ocGrid = OccupancyGrid()
 	pub_map = []
@@ -150,6 +151,23 @@ def expandMap():
 	ocGrid.data = pub_map
 	expanded_pub.publish(ocGrid)
 
+#moves a point to the nearest grid position
+def matchGridPose(p,resD):
+	(x,y) = p
+	(x,y) = (round(x/resD), round(y/resD))
+	return (x*resD, y*resD)
+
+#determines where a point is in the grid array
+def matchPoseIndex(p,resD,widthD):
+	(x,y) = p
+	x = x - gridOrigin.position.x - expandedGridRes
+	y = y - gridOrigin.position.y - expandedGridRes
+	ticks = x/resD + (y/resD*widthD)
+	return int(ticks)
+
+#determines if the point is open (not blocked)
+def open(p):
+	return expandedMap2[matchPoseIndex(p,expandedGridRes,expandedWidth)].intensity != 100
 
 def odomCallBack(data):
 	global theta

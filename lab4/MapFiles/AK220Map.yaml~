@@ -1,4 +1,4 @@
-image: /home/nick/RBE3002/lab4/MapFiles/AK220Map.pgm
+image: /home/cmkeane/AK220Map.pgm
 resolution: 0.050000
 origin: [-12.200000, -12.200000, 0.000000]
 negate: 0
