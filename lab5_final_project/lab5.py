@@ -192,10 +192,13 @@ def odomCallBack(data):
 def statusCallback(msg):
 	global status_num
 	global status_text
+	status_num = 0
+	status_text = "PENDING"
 	status = GoalStatusArray()
 	status = msg
-	status_text = status.status_list[0].text
-	status_num = status.status_list[0].status
+	if(len(status.status_list) > 0):
+		status_text = status.status_list[0].text
+		status_num = status.status_list[0].status
 
 def spin360():
 	startAngle = theta
@@ -252,6 +255,17 @@ def nextGoal():
 			bestGoal = (next.x, next.y)
 	return bestGoal
 
+def navToPos(p):
+	(x,y) = p
+	goal = PoseStamped()
+	goal.header.frame_id = '/map'
+	goal.header.stamp = rospy.Time.now()
+	goal.pose.position.x = x
+	goal.pose.position.y = y
+	goal.pose.orientation = pose.orientation
+	print("publishing goal to navstack")
+	goalPub.publish(goal)
+	goal_Nav_Pub.publish(goal)
 
 
 if __name__ == '__main__':
@@ -260,6 +274,9 @@ if __name__ == '__main__':
 	global goalPub
 	global expanded_pub
 	global frontier_pub
+	global newMap
+	global goal_Nav_Pub
+	newMap = False
 	#subscribers
 	rospy.Subscriber("/odom", Odometry, odomCallBack)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
@@ -270,8 +287,14 @@ if __name__ == '__main__':
 	goalPub = rospy.Publisher('/move_base_simple/goal',PoseStamped, queue_size = 1)
 	expanded_pub = rospy.Publisher("lab5/map",OccupancyGrid, queue_size = 1)
 	frontier_pub = rospy.Publisher('/lab5/frontier', GridCells, queue_size = 1)
-
+	goal_Nav_Pub = rospy.Publisher('/lab5/navGoal',PoseStamped,queue_size = 1)
 
 	print("starting final project")
+	while(newMap == False):
+		pass
 	while(1):
 		rospy.sleep(1)
+		if(status_num != 1):
+			navToPos(nextGoal())
+		else:
+			rospy.sleep(2)
