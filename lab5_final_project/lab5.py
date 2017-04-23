@@ -219,7 +219,7 @@ def findFrontiers():
 		if(next.isFrontier()):
 			if(next not in frontiers):
 				frontiers.append(next)
-				frontiers_points.append(makeGridCell(next.x,next.y))
+				frontiers_points.append(makeGridCell(next.x+expandedGridRes/2,next.y+expandedGridRes/2))
 	frontierGrid = GridCells()
 	frontierGrid.header.frame_id = '/map'
 	frontierGrid.header.stamp = rospy.Time.now()
