@@ -11,8 +11,13 @@ from actionlib_msgs.msg import GoalStatusArray
 
 AngularSpeed = 1
 expandThreshold = 60
-expandBuffer = 0.125
-expandedGridRes = 0.1
+expandBuffer = 0.250
+expandedGridRes = 0.2
+
+MAX_ANGULAR_V = 1
+SLEW_STEP = 0.0125
+SLEW_STEP_TIME = 0.075
+SLEW_STEPS = 50
 
 
 class Node:
@@ -92,6 +97,8 @@ def mapCallBack(msg):
 			countCol += 1
 	expandMap()
 	findFrontiers()
+	if(status_num == 1 and len(frontiers) > 0):
+		navToPos(nextGoal())
 	newMap = True
 
 def expandMap():
@@ -210,6 +217,7 @@ def spin360():
 	publishTwist(0, AngularSpeed)
 
 def publishTwist(linear,angular):
+	global twistPub
 	twist = Twist()
 	twist.linear.x = linear
 	twist.angular.z = angular
@@ -255,6 +263,34 @@ def nextGoal():
 			bestGoal = (next.x, next.y)
 	return bestGoal
 
+def stop():
+	publishTwist(0,0)
+
+def spinWheels(u1, u2, time):
+	timeStamp = rospy.get_time()
+	if(u1 != u2):
+		radius = (u1+u2)/(2*(u2-u1))
+		angular = (u2 - u1)/9
+		linear = angular*radius
+	else:
+		angular  = 0
+		linear = u1
+
+	start_angular = twist.angular.z
+	start_linear = twist.linear.x
+	if(angular > MAX_ANGULAR_V):
+		angular = MAX_ANGULAR_V
+	if(angular < -MAX_ANGULAR_V):
+		angular = -MAX_ANGULAR_V
+	while(rospy.get_time() - timeStamp < time):
+		if(start_linear < linear):
+			start_linear += SLEW_STEP
+		if(start_angular < angular):
+			start_angular += SLEW_STEP
+		#print "linear %f angular %f" % (start_linear,start_angular)
+		publishTwist(linear,angular)
+		rospy.sleep(SLEW_STEP_TIME)
+
 def navToPos(p):
 	(x,y) = p
 	goal = PoseStamped()
@@ -294,7 +330,13 @@ if __name__ == '__main__':
 		pass
 	while(1):
 		rospy.sleep(1)
-		if(status_num != 1):
+		print "current Status %f " % status_num
+		if(status_num == 3 or status_num == 0 or status_num == 4):
+			if(len(frontiers) == 0):
+				break;
 			navToPos(nextGoal())
-		else:
+		elif(status_num == 2):
+			findFrontiers()
 			rospy.sleep(2)
+			print "shit in a bucket"
+	print "Done with this dank shit"
