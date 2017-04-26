@@ -13,7 +13,8 @@ AngularSpeed = 1
 expandThreshold = 60
 expandBuffer = 0.125
 expandedGridRes = 0.1
-newGoalDisplacement = 0.4
+newGoalDisplacement = 0.05
+GLOBALCOSTTHRES = 35
 
 MAX_ANGULAR_V = 1
 SLEW_STEP = 0.0125
@@ -269,8 +270,16 @@ def nextGoal():
 		if(dist > bestDist):
 			bestDist = dist
 			bestGoal = (next.x, next.y)
-			newX = next.x
-			newY = next.y
+	while(costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] == -1):
+		bestGoal = stepFromGoal(bestGoal)
+		print "cost of X: %f Y: %f is %f" % (bestGoal[0],bestGoal[1],costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)])
+
+	print "Going to X: %f Y: %f" %(bestGoal[0],bestGoal[1])
+
+	return bestGoal
+
+def stepFromGoal(goal):
+	(newX,newY) = goal
 	slope = math.atan2((yPos - newY),(xPos - newX))
 
 	if(math.hypot(xPos - (newX + newGoalDisplacement*math.cos(slope)),yPos - (newY + newGoalDisplacement*math.sin(slope))) > math.hypot(xPos - newX,yPos - newY)):
@@ -281,6 +290,28 @@ def nextGoal():
 		newY = newY + newGoalDisplacement*math.sin(slope)
 	bestGoal = (newX,newY)
 	return bestGoal
+
+def globalCostMapCallback(msg):
+	print "grabbing costmap"
+	global costMap
+	global costMapWidth
+	global costMapHeight
+	global costMapRes
+	global costMapOrigin
+
+	costMap = []
+	costMap = msg.data
+	costMapWidth = msg.info.width
+	costMapHeight = msg.info.height
+	costMapRes = msg.info.resolution
+	print "costMap costMapRes is %f m" % costMapRes
+	print "costMapWidth %f costMapHeight %f" % (costMapWidth,costMapHeight)
+	countCol = 0
+	countRow = 0
+	startX = msg.info.origin.position.x
+	startY = msg.info.origin.position.y
+	costMapOrigin = msg.info.origin
+
 
 def stop():
 	publishTwist(0,0)
@@ -333,16 +364,23 @@ if __name__ == '__main__':
 	global goal_Nav_Pub
 	newMap = False
 	#subscribers
-	rospy.Subscriber("/odom", Odometry, odomCallBack)
-	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
-	rospy.Subscriber('/move_base/status', GoalStatusArray, statusCallback, queue_size = 1)
 
-	#publishers
+
+
+
+	rospy.Subscriber("/odom", Odometry, odomCallBack)
+	rospy.Subscriber('/move_base/status', GoalStatusArray, statusCallback, queue_size = 1)
+	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
+	rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, globalCostMapCallback, queue_size = 1)
+
+
+			#publishers
 	twistPub = rospy.Publisher('cmd_vel_mux/input/teleop', Twist, queue_size = 1)
 	goalPub = rospy.Publisher('/move_base_simple/goal',PoseStamped, queue_size = 1)
 	expanded_pub = rospy.Publisher("lab5/map",OccupancyGrid, queue_size = 1)
 	frontier_pub = rospy.Publisher('/lab5/frontier', GridCells, queue_size = 1)
 	goal_Nav_Pub = rospy.Publisher('/lab5/navGoal',PoseStamped,queue_size = 1)
+
 
 	print("starting final project")
 	while(newMap == False):
