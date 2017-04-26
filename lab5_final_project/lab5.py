@@ -11,8 +11,9 @@ from actionlib_msgs.msg import GoalStatusArray
 
 AngularSpeed = 1
 expandThreshold = 60
-expandBuffer = 0.250
-expandedGridRes = 0.2
+expandBuffer = 0.125
+expandedGridRes = 0.1
+newGoalDisplacement = 0.4
 
 MAX_ANGULAR_V = 1
 SLEW_STEP = 0.0125
@@ -47,8 +48,10 @@ class Node:
 		if(self.intensity == -1):
 			for next in self.neighbors():
 				if(matchPoseIndex(next,expandedGridRes,expandedWidth) < expandedWidth*expandedHeight):
-					if(expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].intensity == 0):
-						return True
+					if(matchPoseIndex(next,expandedGridRes,expandedWidth) < len(expandedMap2)):
+
+						if(expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].intensity == 0):
+							return True
 		return False
 
 class FrontierNode:
@@ -98,7 +101,8 @@ def mapCallBack(msg):
 	expandMap()
 	findFrontiers()
 	if(status_num == 1 and len(frontiers) > 0):
-		navToPos(nextGoal())
+		pass
+		#navToPos(nextGoal())
 	newMap = True
 
 def expandMap():
@@ -183,6 +187,8 @@ def odomCallBack(data):
 	global theta
 	global pose
 	global twist
+	global xPos
+	global yPos
 	pose = Pose()
 	twist = Twist()
 	twist = data.twist.twist
@@ -256,11 +262,24 @@ def makeGridCell(x, y):
 def nextGoal():
 	bestGoal = ()
 	bestDist = 0
+	newX = 0
+	newY = 0
 	for next in frontiers:
 		dist = math.hypot(pose.position.x - next.x, pose.position.y - next.y)
 		if(dist > bestDist):
 			bestDist = dist
 			bestGoal = (next.x, next.y)
+			newX = next.x
+			newY = next.y
+	slope = math.atan2((yPos - newY),(xPos - newX))
+
+	if(math.hypot(xPos - (newX + newGoalDisplacement*math.cos(slope)),yPos - (newY + newGoalDisplacement*math.sin(slope))) > math.hypot(xPos - newX,yPos - newY)):
+		newX = newX - newGoalDisplacement*math.cos(slope)
+		newY = newY - newGoalDisplacement*math.sin(slope)
+	else:
+		newX = newX + newGoalDisplacement*math.cos(slope)
+		newY = newY + newGoalDisplacement*math.sin(slope)
+	bestGoal = (newX,newY)
 	return bestGoal
 
 def stop():
