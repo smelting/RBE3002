@@ -449,6 +449,15 @@ if __name__ == '__main__':
 
 
 	print("starting final project")
+	startTime = rospy.get_time()
+	startTheta = theta
+	timeSince = 0
+	while(timeSince < 3):
+		publishTwist(0,1)
+		timeSince = rospy.get_time() - startTime
+	while(math.fabs(theta - startTheta)>3):
+		publishTwist(0,1)
+	stop()
 	while(newMap == False):
 		pass
 	while(1):
