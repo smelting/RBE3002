@@ -232,7 +232,6 @@ def spin360():
 	publishTwist(0, AngularSpeed)
 
 def publishTwist(linear,angular):
-	global twistPub
 	twist = Twist()
 	twist.linear.x = linear
 	twist.angular.z = angular
@@ -450,6 +449,7 @@ if __name__ == '__main__':
 
 	print("starting final project")
 	startTime = rospy.get_time()
+<<<<<<< Updated upstream
 	startTheta = theta
 	timeSince = 0
 	while(timeSince < 3):
@@ -458,6 +458,12 @@ if __name__ == '__main__':
 	while(math.fabs(theta - startTheta)>3):
 		publishTwist(0,1)
 	stop()
+=======
+	while(timePast < 3):
+		publishTwist(0,.5)
+		timePast = rospy.get_time() - startTime
+		rospy.sleep(.1)
+>>>>>>> Stashed changes
 	while(newMap == False):
 		pass
 	while(1):
