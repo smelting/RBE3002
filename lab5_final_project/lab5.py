@@ -38,9 +38,16 @@ class Node:
 		y = y - gridOrigin.position.y
 		return 0 <= x < (width/(expandedGridRes/res))*expandedGridRes and 0 <= y < (height/(expandedGridRes/res))*expandedGridRes
 
-	#finds and returns all neighbors (including diagonals)
+	#finds and returns all neighbors (excluding diagonals)
 	def neighbors(self):
 		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes)]
+		neighbors = filter(self.inBounds, neighbors)
+		#neighbors = filter(open, neighbors)
+		return neighbors
+
+	#finds neighbors including diagonals
+	def neighbors2(self):
+		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes), (self.x-expandedGridRes, self.y-expandedGridRes), (self.x-expandedGridRes, self.y+expandedGridRes),(self.x+expandedGridRes, self.y-expandedGridRes), (self.x+expandedGridRes, self.y+expandedGridRes)]
 		neighbors = filter(self.inBounds, neighbors)
 		#neighbors = filter(open, neighbors)
 		return neighbors
@@ -270,9 +277,10 @@ def nextGoal():
 		if(dist > bestDist):
 			bestDist = dist
 			bestGoal = (next.x, next.y)
-	while(costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] == -1):
-		bestGoal = stepFromGoal(bestGoal)
-		print "cost of X: %f Y: %f is %f" % (bestGoal[0],bestGoal[1],costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)])
+	bestGoal = blobFrontiers(bestGoal)
+	# while(costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] == -1):
+	# 	bestGoal = stepFromGoal(bestGoal)
+	# 	print "cost of X: %f Y: %f is %f" % (bestGoal[0],bestGoal[1],costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)])
 
 	print "Going to X: %f Y: %f" %(bestGoal[0],bestGoal[1])
 
@@ -352,6 +360,23 @@ def navToPos(p):
 	print("publishing goal to navstack")
 	goalPub.publish(goal)
 	goal_Nav_Pub.publish(goal)
+
+def blobFrontiers(goal):
+	blob = []
+	blob.append(expandedMap2[matchPoseIndex(goal)])
+	for next in blob:
+		for next2 in next.neighbors2():
+			if(next2 in frontiers):
+				blob.append(next2)
+				frontiers.remove(next2)
+
+	blobGoal = (0,0)
+	for next in blob:
+		blobGoal[0] += next.x
+		blobGoal[1] += next.y
+	blobGoal[0] = (blobGoal[0]/len(blob))
+	blobGoal[1] = (blobGoal[1]/len(blob))
+	return blobGoal
 
 
 if __name__ == '__main__':
