@@ -3,6 +3,7 @@ from nav_msgs.msg import Odometry
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import GridCells
 from nav_msgs.msg import OccupancyGrid
+from map_msgs.msg import OccupancyGridUpdate
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose
@@ -239,6 +240,10 @@ def publishTwist(linear,angular):
 
 def findFrontiers():
 	global frontiers
+	global blobsSeen
+	global blobLimit
+	blobLimit = 10
+	blobsSeen = 0
 	frontiers = []
 	frontiers_points = []
 	for next in expandedMap2:
@@ -268,19 +273,29 @@ def makeGridCell(x, y):
 	return point
 
 def nextGoal():
-	bestGoal = ()
-	bestDist = 0
-	newX = 0
-	newY = 0
-	for next in frontiers:
-		dist = math.hypot(pose.position.x - next.x, pose.position.y - next.y)
-		if(dist > bestDist):
-			bestDist = dist
-			bestGoal = (next.x, next.y)
-	bestGoal = blobFrontiers(bestGoal)
-	# while(costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] == -1):
-	# 	bestGoal = stepFromGoal(bestGoal)
-	# 	print "cost of X: %f Y: %f is %f" % (bestGoal[0],bestGoal[1],costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)])
+	done = False
+	global blobLimit
+	while(not done):
+		print "looking for blob! %f" % blobLimit
+		bestGoal = ()
+		bestDist = 0
+		newX = 0
+		newY = 0
+		for next in frontiers:
+			dist = math.hypot(pose.position.x - next.x, pose.position.y - next.y)
+			if(dist > bestDist):
+				bestDist = dist
+				bestGoal = (next.x, next.y)
+		(bestGoal,done) = blobFrontiers(bestGoal)
+		blobLimit = blobLimit - 1
+		if(blobLimit == 0):
+			print "can't find a blob to go to!"
+			bestGoal = (xPos - .25,yPos -.25)
+	while(costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] == -1):
+	 	bestGoal = stepFromGoal(bestGoal)
+	 	if(math.fabs(xPos - bestGoal[0]) < .5 and math.fabs(yPos - bestGoal[1]) < .5): #suck at it's own position
+	 		break
+	 	print "cost of X: %f Y: %f is %f" % (bestGoal[0],bestGoal[1],costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)])
 
 	print "Going to X: %f Y: %f" %(bestGoal[0],bestGoal[1])
 
@@ -320,6 +335,27 @@ def globalCostMapCallback(msg):
 	startY = msg.info.origin.position.y
 	costMapOrigin = msg.info.origin
 
+def costMapUpdateCallback(msg):
+	global costMap
+	global costMapWidthUpdate
+	global costMapHeightUpdate
+	global costMapOrigin
+
+	print "CostMap Update!!!!!!!!!!! ***************"
+	costMapUpdateData = []
+	costMapWidthUpdate = msg.width
+	costMapHeightUpdate = msg.height
+	costMapUpdateData = msg.data
+	startX = msg.x
+	startY = msg.y
+	index = 0
+	print "costMap update x: %f y: %f" % (startX,startY)
+	print "costMap origin is at x: %f y:: %f" %(costMapOrigin.position.x,costMapOrigin.position.y)
+	print "costMapWidth %f costMapHeight %f" % (costMapWidth,costMapHeight)
+	for y in range(startY, startY + costMapHeight):
+		for x in range(startX, startX + costMapWidthUpdate):
+			costMap[costMapWidth*y + x] = costMapUpdateData[index]
+			index = index + 1
 
 def stop():
 	publishTwist(0,0)
@@ -362,21 +398,26 @@ def navToPos(p):
 	goal_Nav_Pub.publish(goal)
 
 def blobFrontiers(goal):
+	global blobsSeen
 	blob = []
-	blob.append(expandedMap2[matchPoseIndex(goal)])
-	for next in blob:
-		for next2 in next.neighbors2():
-			if(next2 in frontiers):
-				blob.append(next2)
-				frontiers.remove(next2)
-
-	blobGoal = (0,0)
-	for next in blob:
-		blobGoal[0] += next.x
-		blobGoal[1] += next.y
-	blobGoal[0] = (blobGoal[0]/len(blob))
-	blobGoal[1] = (blobGoal[1]/len(blob))
-	return blobGoal
+	if(len(goal) == 2):
+		blob.append(expandedMap2[matchPoseIndex(goal,expandedGridRes,expandedWidth)])
+		for next in blob:
+			for next2 in next.neighbors2():
+				if(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)] in frontiers):
+					blob.append(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)])
+					frontiers.remove(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)])
+		print "blob is %f" % len(blob)
+		blobsSeen = blobsSeen + 1
+		if(len(blob) > blobLimit):	
+			blobGoal = [0,0]
+			for next in blob:
+				blobGoal[0] = blobGoal[0] + next.x
+				blobGoal[1] = blobGoal[1] + next.y
+			blobGoal[0] = (blobGoal[0]/len(blob))
+			blobGoal[1] = (blobGoal[1]/len(blob))
+			return (blobGoal,True)
+	return ([],False)
 
 
 if __name__ == '__main__':
@@ -397,7 +438,7 @@ if __name__ == '__main__':
 	rospy.Subscriber('/move_base/status', GoalStatusArray, statusCallback, queue_size = 1)
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
 	rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, globalCostMapCallback, queue_size = 1)
-
+	rospy.Subscriber('/move_base/global_costmap/costmap_updates', OccupancyGridUpdate, costMapUpdateCallback, queue_size = 1)
 
 			#publishers
 	twistPub = rospy.Publisher('cmd_vel_mux/input/teleop', Twist, queue_size = 1)
@@ -414,9 +455,11 @@ if __name__ == '__main__':
 		rospy.sleep(1)
 		print "current Status %f " % status_num
 		if(status_num == 3 or status_num == 0 or status_num == 4):
-			if(len(frontiers) == 0):
+			print "calculating new Goal"
+			if(len(frontiers) == 0 and blobsSeen == 0):
 				break;
 			navToPos(nextGoal())
+			rospy.sleep(5)
 		elif(status_num == 2):
 			findFrontiers()
 			rospy.sleep(2)
