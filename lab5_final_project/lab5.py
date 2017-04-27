@@ -1,4 +1,4 @@
-import math, tf, rospy, copy
+import math, tf, rospy, copy, Queue
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import GridCells
@@ -11,11 +11,11 @@ from geometry_msgs.msg import PoseStamped
 from actionlib_msgs.msg import GoalStatusArray
 
 AngularSpeed = 1
-expandThreshold = 60
-expandBuffer = 0.125
-expandedGridRes = 0.1
+expandThreshold = 45
+expandBuffer = 0.175
+expandedGridRes = 0.2
 newGoalDisplacement = 0.05
-GLOBALCOSTTHRES = 35
+GLOBALCOSTTHRES = 20
 
 MAX_ANGULAR_V = 1
 SLEW_STEP = 0.0125
@@ -39,6 +39,12 @@ class Node:
 		y = y - gridOrigin.position.y
 		return 0 <= x < (width/(expandedGridRes/res))*expandedGridRes and 0 <= y < (height/(expandedGridRes/res))*expandedGridRes
 
+	def inBounds2(self, node):
+		(x,y) = node
+		x = x - gridOrigin.position.x
+		y = y - gridOrigin.position.y
+		return 0 <= x < (width*res) and 0 <= y < (height*res)
+
 	def inIndex(self, node):
 		return matchPoseIndex(node,expandedGridRes,expandedWidth) < len(expandedMap2)
 
@@ -46,6 +52,12 @@ class Node:
 	def neighbors(self):
 		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes)]
 		neighbors = filter(self.inBounds, neighbors)
+		#neighbors = filter(open, neighbors)
+		return neighbors
+
+	def neighbors3(self):
+		neighbors = [(self.x+res, self.y), (self.x, self.y-res), (self.x-res, self.y), (self.x,self.y+res)]
+		neighbors = filter(self.inBounds2, neighbors)
 		#neighbors = filter(open, neighbors)
 		return neighbors
 
@@ -116,6 +128,31 @@ def mapCallBack(msg):
 	if(status_num == 1 and len(frontiers) > 0):
 		pass
 		#navToPos(nextGoal())
+	newMap = True
+
+def mapCallBack_update(msg):
+	print "getting map update"
+	global grid
+
+	mapUpdateData = []
+	grid = list(grid)
+	mapUpdateWidth = msg.width
+	mapUpdateHeight = msg.height
+	mapUpdateData = msg.data
+	startX = msg.x
+	startY = msg.y
+	index = 0
+	for y in range(startY, startY + mapUpdateHeight):
+		for x in range(startX, startX + mapUpdateWidth):
+			#print "%f %f %f %f" % (len(costMap),costMapWidth*y + x,len(costMapUpdateData),index)
+			if(index < len(mapUpdateData)):
+				grid[width*y + x].intensity = mapUpdateData[index]
+				index = index + 1
+			else:
+				#print" %f  %f" %(len(costMapUpdateData),index)
+				break
+	expandMap()
+	findFrontiers()
 	newMap = True
 
 def expandMap():
@@ -291,14 +328,15 @@ def nextGoal():
 				bestGoal = (next.x, next.y)
 		(bestGoal,done) = blobFrontiers(bestGoal)
 		blobLimit = blobLimit - 1
-		if(blobLimit == 0):
+		if(blobLimit <= 0):
 			print "can't find a blob to go to!"
 			bestGoal = (xPos - .25,yPos -.25)
-	while(costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] == -1):
-	 	bestGoal = stepFromGoal(bestGoal)
-	 	if(math.fabs(xPos - bestGoal[0]) < .5 and math.fabs(yPos - bestGoal[1]) < .5): #suck at it's own position
-	 		break
-	 	print "cost of X: %f Y: %f is %f" % (bestGoal[0],bestGoal[1],costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)])
+			done = True
+	# while(costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)] == -1):
+	# 	bestGoal = stepFromGoal(bestGoal)
+	# 	if(math.fabs(xPos - bestGoal[0]) < .5 and math.fabs(yPos - bestGoal[1]) < .5): #suck at it's own position
+	# 		break
+	# 	print "cost of X: %f Y: %f is %f" % (bestGoal[0],bestGoal[1],costMap[matchPoseIndex(matchGridPose(stepFromGoal(bestGoal),costMapRes),costMapRes,costMapWidth)])
 
 	print "Going to X: %f Y: %f" %(bestGoal[0],bestGoal[1])
 
@@ -330,8 +368,8 @@ def globalCostMapCallback(msg):
 	costMapWidth = msg.info.width
 	costMapHeight = msg.info.height
 	costMapRes = msg.info.resolution
-	print "costMap costMapRes is %f m" % costMapRes
-	print "costMapWidth %f costMapHeight %f" % (costMapWidth,costMapHeight)
+	# print "costMap costMapRes is %f m" % costMapRes
+	# print "costMapWidth %f costMapHeight %f" % (costMapWidth,costMapHeight)
 	countCol = 0
 	countRow = 0
 	startX = msg.info.origin.position.x
@@ -355,11 +393,11 @@ def costMapUpdateCallback(msg):
 	startX = msg.x
 	startY = msg.y
 	index = 0
-	print "costMap update x: %f y: %f" % (startX,startY)
-	print "costMap origin is at x: %f y:: %f" %(costMapOrigin.position.x,costMapOrigin.position.y)
-	print "costMapWidth %f costMapHeight %f" % (costMapWidth,costMapHeight)
+	# print "costMap update x: %f y: %f" % (startX,startY)
+	# print "costMap origin is at x: %f y:: %f" %(costMapOrigin.position.x,costMapOrigin.position.y)
+	# print "costMapWidth %f costMapHeight %f" % (costMapWidth,costMapHeight)
 
-	for y in range(startY, startY + costMapHeight):
+	for y in range(startY, startY + costMapHeightUpdate):
 		for x in range(startX, startX + costMapWidthUpdate):
 			#print "%f %f %f %f" % (len(costMap),costMapWidth*y + x,len(costMapUpdateData),index)
 			if(index < len(costMapUpdateData)):
@@ -374,7 +412,7 @@ def costMapUpdateCallback(msg):
 	costMapPub.info.origin = costMapOrigin
 	costMapPub.info.width = costMapWidth
 	costMapPub.info.height = costMapHeight
-	costMapPub.data = costMapUpdateData
+	costMapPub.data = costMap
 	costMap_pub.publish(costMapPub)
 	newCostMap = True
 
@@ -421,7 +459,7 @@ def navToPos(p):
 def blobFrontiers(goal):
 	global blobsSeen
 	blob = []
-	if(len(goal) == 2):
+	if(len(goal) == 2 and matchPoseIndex(goal,expandedGridRes,expandedWidth) < len(expandedMap2)):
 		blob.append(expandedMap2[matchPoseIndex(goal,expandedGridRes,expandedWidth)])
 		for next in blob:
 			for next2 in next.neighbors2():
@@ -437,9 +475,30 @@ def blobFrontiers(goal):
 				blobGoal[1] = blobGoal[1] + next.y
 			blobGoal[0] = (blobGoal[0]/len(blob))
 			blobGoal[1] = (blobGoal[1]/len(blob))
+
+			blobGoal = matchGridPose(blobGoal,costMapRes)
+			checking = Queue.Queue()
+			found = False
+			checking.put(blobGoal)
+			count = 0
+			while(not found and count < 1000):
+				count = count + 1
+				if not checking.empty():
+					node = checking.get()
+					if(costMap[matchPoseIndex(node,costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(node,costMapRes,costMapWidth)] < 0):
+						if(matchPoseIndex(node,expandedGridRes,expandedWidth) < len(expandedMap2)):
+							for newNode in expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].neighbors():
+								checking.put(newNode)
+						else:
+							found = True
+							blobGoal = node
+							blobGoal = list(blobGoal)
+
+				else:
+					([],False)
+			print "done with blobThing"
 			return (blobGoal,True)
 	return ([],False)
-
 
 if __name__ == '__main__':
 	rospy.init_node('Lab5')
@@ -463,7 +522,7 @@ if __name__ == '__main__':
 	rospy.Subscriber("/map", OccupancyGrid, mapCallBack, queue_size = 1)
 	rospy.Subscriber('/move_base/global_costmap/costmap', OccupancyGrid, globalCostMapCallback, queue_size = 1)
 	rospy.Subscriber('/move_base/global_costmap/costmap_updates', OccupancyGridUpdate, costMapUpdateCallback, queue_size = 1)
-
+	rospy.Subscriber('/map_updates', OccupancyGridUpdate, mapCallBack_update, queue_size = 1)
 			#publishers
 	twistPub = rospy.Publisher('cmd_vel_mux/input/teleop', Twist, queue_size = 1)
 	goalPub = rospy.Publisher('/move_base_simple/goal',PoseStamped, queue_size = 1)
@@ -489,14 +548,16 @@ if __name__ == '__main__':
 		rospy.sleep(1)
 		print "current Status %f " % status_num
 		if(status_num == 3 or status_num == 0 or status_num == 4):
-			print "calculating new Goal"
-			if(len(frontiers) == 0 and blobsSeen == 0):
-				break;
+			# if(len(frontiers) == 0 and blobsSeen == 0):
+			# 	break;
 			while(newCostMap == False):
 				pass
-			navToPos(nextGoal())
-			newCostMap = False
-			rospy.sleep(5)
+			if(newMap):
+				print "calculating new Goal"
+				navToPos(nextGoal())
+				newCostMap = False
+				newMap = False
+				rospy.sleep(5) 
 		elif(status_num == 2):
 			findFrontiers()
 			rospy.sleep(2)
