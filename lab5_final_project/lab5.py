@@ -1,4 +1,5 @@
 import math, tf, rospy, copy, Queue
+import heapq
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import GridCells
@@ -13,9 +14,9 @@ from actionlib_msgs.msg import GoalStatusArray
 AngularSpeed = 1
 expandThreshold = 45
 expandBuffer = 0.175
-expandedGridRes = 0.2
+expandedGridRes = 0.1
 newGoalDisplacement = 0.05
-GLOBALCOSTTHRES = 20
+GLOBALCOSTTHRES = 35
 
 MAX_ANGULAR_V = 1
 SLEW_STEP = 0.0125
@@ -104,8 +105,6 @@ def mapCallBack(msg):
 	width = msg.info.width
 	height = msg.info.height
 	res = msg.info.resolution
-	print "grid res is %f m" % res
-	print "width %f height %f" % (width,height)
 	countCol = 0
 	countRow = 0
 	startX = msg.info.origin.position.x
@@ -124,11 +123,13 @@ def mapCallBack(msg):
 			count += 1
 			countCol += 1
 	expandMap()
+	print "finding frontiers"
 	findFrontiers()
 	if(status_num == 1 and len(frontiers) > 0):
 		pass
 		#navToPos(nextGoal())
 	newMap = True
+
 
 def mapCallBack_update(msg):
 	print "getting map update"
@@ -160,9 +161,8 @@ def expandMap():
 	global expandedMap2
 	global expandedWidth
 	global expandedHeight
+	print "expanding Map"
 	expandedMap = copy.deepcopy(grid)
-	print "Expanded is %f" % len(grid)
-	print "expanded width %f height %f" % (width,height)
 	for i in range (0, height):
 		for j in range (0, width):
 			if (grid[j + (width * i)].intensity >= expandThreshold):
@@ -195,8 +195,6 @@ def expandMap():
 	newHeight = int(height/(expandedGridRes/res))
 	expandedWidth = newWidth
 	expandedHeight = newHeight
-	print("expanded width %f") % expandedWidth
-	print("expanded Map2 Length %f") %len(expandedMap2) 
 
 	ocGrid = OccupancyGrid()
 	pub_map = []
@@ -214,6 +212,7 @@ def expandMap():
 	ocGrid.info.origin = gridOrigin
 	ocGrid.data = pub_map
 	expanded_pub.publish(ocGrid)
+	print "done expanding"
 
 #moves a point to the nearest grid position
 def matchGridPose(p,resD):
@@ -316,7 +315,6 @@ def nextGoal():
 	done = False
 	global blobLimit
 	while(not done):
-		print "looking for blob! %f" % blobLimit
 		bestGoal = ()
 		bestDist = 0
 		newX = 0
@@ -356,7 +354,6 @@ def stepFromGoal(goal):
 	return bestGoal
 
 def globalCostMapCallback(msg):
-	print "grabbing costmap"
 	global costMap
 	global costMapWidth
 	global costMapHeight
@@ -383,8 +380,6 @@ def costMapUpdateCallback(msg):
 	global costMapOrigin
 	global newCostMap
 	costMapPub = OccupancyGrid()
-
-	print "CostMap Update!!!!!!!!!!! ***************"
 	costMapUpdateData = []
 	costMap = list(costMap)
 	costMapWidthUpdate = msg.width
@@ -447,17 +442,26 @@ def spinWheels(u1, u2, time):
 def navToPos(p):
 	(x,y) = p
 	goal = PoseStamped()
+	goal2 = PoseStamped()
 	goal.header.frame_id = '/map'
 	goal.header.stamp = rospy.Time.now()
+	goal2.header.frame_id = '/map'
+	goal2.header.stamp = rospy.Time.now()
 	goal.pose.position.x = x
 	goal.pose.position.y = y
+	goal2.pose.position.x = startBest[0]
+	goal2.pose.position.y = startBest[1]
 	goal.pose.orientation = pose.orientation
+	goal2.pose.orientation = pose.orientation
 	print("publishing goal to navstack")
 	goalPub.publish(goal)
 	goal_Nav_Pub.publish(goal)
+	goal_Nav_Pub1.publish(goal2)
 
 def blobFrontiers(goal):
 	global blobsSeen
+	global startBest
+	startBest = (0,0)
 	blob = []
 	if(len(goal) == 2 and matchPoseIndex(goal,expandedGridRes,expandedWidth) < len(expandedMap2)):
 		blob.append(expandedMap2[matchPoseIndex(goal,expandedGridRes,expandedWidth)])
@@ -466,8 +470,8 @@ def blobFrontiers(goal):
 				if(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)] in frontiers):
 					blob.append(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)])
 					frontiers.remove(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)])
-		print "blob is %f" % len(blob)
 		blobsSeen = blobsSeen + 1
+		startBest = goal
 		if(len(blob) > blobLimit):	
 			blobGoal = [0,0]
 			for next in blob:
@@ -477,25 +481,22 @@ def blobFrontiers(goal):
 			blobGoal[1] = (blobGoal[1]/len(blob))
 
 			blobGoal = matchGridPose(blobGoal,costMapRes)
-			checking = Queue.Queue()
+			checking = []
 			found = False
-			checking.put(blobGoal)
+			heapq.heappush(checking,(0,blobGoal))
 			count = 0
 			while(not found and count < 1000):
 				count = count + 1
-				if not checking.empty():
-					node = checking.get()
-					if(costMap[matchPoseIndex(node,costMapRes,costMapWidth)] > GLOBALCOSTTHRES or costMap[matchPoseIndex(node,costMapRes,costMapWidth)] < 0):
-						if(matchPoseIndex(node,expandedGridRes,expandedWidth) < len(expandedMap2)):
-							for newNode in expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].neighbors():
-								checking.put(newNode)
-						else:
-							found = True
-							blobGoal = node
-							blobGoal = list(blobGoal)
-
+				(p,node) = heapq.heappop(checking)
+				if(costMap[matchPoseIndex(node,costMapRes,costMapWidth)] > 10 or costMap[matchPoseIndex(node,costMapRes,costMapWidth)] < 0 or expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].intensity < 0):
+					if(matchPoseIndex(node,expandedGridRes,expandedWidth) < len(expandedMap2)):
+						for newNode in expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].neighbors():
+							dist = math.hypot(startBest[0] - newNode[0], startBest[1] - newNode[1])
+							heapq.heappush(checking,(dist,newNode))
 				else:
-					([],False)
+					found = True
+					blobGoal = node
+					blobGoal = list(blobGoal)
 			print "done with blobThing"
 			return (blobGoal,True)
 	return ([],False)
@@ -508,6 +509,7 @@ if __name__ == '__main__':
 	global frontier_pub
 	global newMap
 	global goal_Nav_Pub
+	global goal_Nav_Pub1
 	global costMap_pub
 	global newCostMap
 	newCostMap = False
@@ -530,6 +532,7 @@ if __name__ == '__main__':
 	costMap_pub = rospy.Publisher('/lab5/costMap',OccupancyGrid, queue_size = 1)
 	frontier_pub = rospy.Publisher('/lab5/frontier', GridCells, queue_size = 1)
 	goal_Nav_Pub = rospy.Publisher('/lab5/navGoal',PoseStamped,queue_size = 1)
+	goal_Nav_Pub1 = rospy.Publisher('/lab5/navGoal2',PoseStamped,queue_size = 1)
 
 
 	print("starting final project")
@@ -537,10 +540,10 @@ if __name__ == '__main__':
 	startTheta = theta
 	timeSince = 0
 	while(timeSince < 3):
-		publishTwist(0,1)
+		publishTwist(0,.5)
 		timeSince = rospy.get_time() - startTime
 	while(math.fabs(theta - startTheta)>3):
-		publishTwist(0,1)
+		publishTwist(0,.5)
 	stop()
 	while(newMap == False):
 		pass
@@ -548,8 +551,8 @@ if __name__ == '__main__':
 		rospy.sleep(1)
 		print "current Status %f " % status_num
 		if(status_num == 3 or status_num == 0 or status_num == 4):
-			# if(len(frontiers) == 0 and blobsSeen == 0):
-			# 	break;
+			if(len(frontiers) < 8 and newMap == True):
+			 	break;
 			while(newCostMap == False):
 				pass
 			if(newMap):
