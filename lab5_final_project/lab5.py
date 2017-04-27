@@ -39,6 +39,9 @@ class Node:
 		y = y - gridOrigin.position.y
 		return 0 <= x < (width/(expandedGridRes/res))*expandedGridRes and 0 <= y < (height/(expandedGridRes/res))*expandedGridRes
 
+	def inIndex(self, node):
+		return matchPoseIndex(node,expandedGridRes,expandedWidth) < len(expandedMap2)
+
 	#finds and returns all neighbors (excluding diagonals)
 	def neighbors(self):
 		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes)]
@@ -50,6 +53,7 @@ class Node:
 	def neighbors2(self):
 		neighbors = [(self.x+expandedGridRes, self.y), (self.x, self.y-expandedGridRes), (self.x-expandedGridRes, self.y), (self.x,self.y+expandedGridRes), (self.x-expandedGridRes, self.y-expandedGridRes), (self.x-expandedGridRes, self.y+expandedGridRes),(self.x+expandedGridRes, self.y-expandedGridRes), (self.x+expandedGridRes, self.y+expandedGridRes)]
 		neighbors = filter(self.inBounds, neighbors)
+		neighbors = filter(self.inIndex, neighbors)
 		#neighbors = filter(open, neighbors)
 		return neighbors
 
@@ -339,9 +343,12 @@ def costMapUpdateCallback(msg):
 	global costMapWidthUpdate
 	global costMapHeightUpdate
 	global costMapOrigin
+	global newCostMap
+	costMapPub = OccupancyGrid()
 
 	print "CostMap Update!!!!!!!!!!! ***************"
 	costMapUpdateData = []
+	costMap = list(costMap)
 	costMapWidthUpdate = msg.width
 	costMapHeightUpdate = msg.height
 	costMapUpdateData = msg.data
@@ -351,10 +358,25 @@ def costMapUpdateCallback(msg):
 	print "costMap update x: %f y: %f" % (startX,startY)
 	print "costMap origin is at x: %f y:: %f" %(costMapOrigin.position.x,costMapOrigin.position.y)
 	print "costMapWidth %f costMapHeight %f" % (costMapWidth,costMapHeight)
+
 	for y in range(startY, startY + costMapHeight):
 		for x in range(startX, startX + costMapWidthUpdate):
-			costMap[costMapWidth*y + x] = costMapUpdateData[index]
-			index = index + 1
+			#print "%f %f %f %f" % (len(costMap),costMapWidth*y + x,len(costMapUpdateData),index)
+			if(index < len(costMapUpdateData)):
+				costMap[costMapWidth*y + x] = costMapUpdateData[index]
+				index = index + 1
+			else:
+				#print" %f  %f" %(len(costMapUpdateData),index)
+				break
+	costMapPub.header.frame_id = '/map'
+	costMapPub.header.stamp = rospy.Time.now()
+	costMapPub.info.resolution = costMapRes
+	costMapPub.info.origin = costMapOrigin
+	costMapPub.info.width = costMapWidth
+	costMapPub.info.height = costMapHeight
+	costMapPub.data = costMapUpdateData
+	costMap_pub.publish(costMapPub)
+	newCostMap = True
 
 def stop():
 	publishTwist(0,0)
@@ -427,6 +449,9 @@ if __name__ == '__main__':
 	global frontier_pub
 	global newMap
 	global goal_Nav_Pub
+	global costMap_pub
+	global newCostMap
+	newCostMap = False
 	newMap = False
 	#subscribers
 
@@ -443,13 +468,13 @@ if __name__ == '__main__':
 	twistPub = rospy.Publisher('cmd_vel_mux/input/teleop', Twist, queue_size = 1)
 	goalPub = rospy.Publisher('/move_base_simple/goal',PoseStamped, queue_size = 1)
 	expanded_pub = rospy.Publisher("lab5/map",OccupancyGrid, queue_size = 1)
+	costMap_pub = rospy.Publisher('/lab5/costMap',OccupancyGrid, queue_size = 1)
 	frontier_pub = rospy.Publisher('/lab5/frontier', GridCells, queue_size = 1)
 	goal_Nav_Pub = rospy.Publisher('/lab5/navGoal',PoseStamped,queue_size = 1)
 
 
 	print("starting final project")
 	startTime = rospy.get_time()
-<<<<<<< Updated upstream
 	startTheta = theta
 	timeSince = 0
 	while(timeSince < 3):
@@ -458,12 +483,6 @@ if __name__ == '__main__':
 	while(math.fabs(theta - startTheta)>3):
 		publishTwist(0,1)
 	stop()
-=======
-	while(timePast < 3):
-		publishTwist(0,.5)
-		timePast = rospy.get_time() - startTime
-		rospy.sleep(.1)
->>>>>>> Stashed changes
 	while(newMap == False):
 		pass
 	while(1):
@@ -473,7 +492,10 @@ if __name__ == '__main__':
 			print "calculating new Goal"
 			if(len(frontiers) == 0 and blobsSeen == 0):
 				break;
+			while(newCostMap == False):
+				pass
 			navToPos(nextGoal())
+			newCostMap = False
 			rospy.sleep(5)
 		elif(status_num == 2):
 			findFrontiers()
