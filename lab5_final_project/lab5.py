@@ -1,5 +1,5 @@
 import math, tf, rospy, copy, Queue
-import heapq
+import heapq, random
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import MapMetaData
 from nav_msgs.msg import GridCells
@@ -71,12 +71,11 @@ class Node:
 		return neighbors
 
 	def isFrontier(self):
-		if(self.intensity == -1):
+		if(self.intensity == 0):
 			for next in self.neighbors():
 				if(matchPoseIndex(next,expandedGridRes,expandedWidth) < expandedWidth*expandedHeight):
 					if(matchPoseIndex(next,expandedGridRes,expandedWidth) < len(expandedMap2)):
-
-						if(expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].intensity == 0):
+						if(expandedMap2[matchPoseIndex(next,expandedGridRes,expandedWidth)].intensity == -1):
 							return True
 		return False
 
@@ -281,7 +280,7 @@ def findFrontiers():
 	global frontiers
 	global blobsSeen
 	global blobLimit
-	blobLimit = 10
+	blobLimit = 4
 	blobsSeen = 0
 	frontiers = []
 	frontiers_points = []
@@ -314,7 +313,9 @@ def makeGridCell(x, y):
 def nextGoal():
 	done = False
 	global blobLimit
+	count = 0
 	while(not done):
+		count = count + 1
 		bestGoal = ()
 		bestDist = 0
 		newX = 0
@@ -325,8 +326,10 @@ def nextGoal():
 				bestDist = dist
 				bestGoal = (next.x, next.y)
 		(bestGoal,done) = blobFrontiers(bestGoal)
-		blobLimit = blobLimit - 1
-		if(blobLimit <= 0):
+		print " LOOL"
+		if(blobLimit > 2):
+			blobLimit = blobLimit - 1
+		if(len(frontiers) < 4 and done == False or count > 100):
 			print "can't find a blob to go to!"
 			bestGoal = (xPos - .25,yPos -.25)
 			done = True
@@ -451,6 +454,20 @@ def navToPos(p):
 	goal.pose.position.y = y
 	goal2.pose.position.x = startBest[0]
 	goal2.pose.position.y = startBest[1]
+	# theta = random.randint(0,360)
+	# quaternion = (
+ #    pose.orientation.x,
+ #    pose.orientation.y,
+ #    pose.orientation.z,
+ #    pose.orientation.w)
+	# euler = tf.transformations.euler_from_quaternion(quaternion)
+	# roll = euler[0]
+	# pitch = euler[1]
+	# yaw = euler[2]
+	# yaw = yaw + theta
+	# if(yaw > 350):
+	# 	yaw = yaw - 350
+	# orien =  tf.transformations.quaternion_from_euler(roll, pitch, yaw)
 	goal.pose.orientation = pose.orientation
 	goal2.pose.orientation = pose.orientation
 	print("publishing goal to navstack")
@@ -471,7 +488,6 @@ def blobFrontiers(goal):
 					blob.append(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)])
 					frontiers.remove(expandedMap2[matchPoseIndex(next2,expandedGridRes,expandedWidth)])
 		blobsSeen = blobsSeen + 1
-		startBest = goal
 		if(len(blob) > blobLimit):	
 			blobGoal = [0,0]
 			for next in blob:
@@ -481,22 +497,23 @@ def blobFrontiers(goal):
 			blobGoal[1] = (blobGoal[1]/len(blob))
 
 			blobGoal = matchGridPose(blobGoal,costMapRes)
-			checking = []
-			found = False
-			heapq.heappush(checking,(0,blobGoal))
-			count = 0
-			while(not found and count < 1000):
-				count = count + 1
-				(p,node) = heapq.heappop(checking)
-				if(costMap[matchPoseIndex(node,costMapRes,costMapWidth)] > 10 or costMap[matchPoseIndex(node,costMapRes,costMapWidth)] < 0 or expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].intensity < 0):
-					if(matchPoseIndex(node,expandedGridRes,expandedWidth) < len(expandedMap2)):
-						for newNode in expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].neighbors():
-							dist = math.hypot(startBest[0] - newNode[0], startBest[1] - newNode[1])
-							heapq.heappush(checking,(dist,newNode))
-				else:
-					found = True
-					blobGoal = node
-					blobGoal = list(blobGoal)
+			startBest = blobGoal
+			# checking = []
+			# found = False
+			# heapq.heappush(checking,(0,blobGoal))
+			# count = 0
+			# while(not found and count < 1000):
+			# 	count = count + 1
+			# 	(p,node) = heapq.heappop(checking)
+			# 	if(costMap[matchPoseIndex(node,costMapRes,costMapWidth)] > 10 or costMap[matchPoseIndex(node,costMapRes,costMapWidth)] < 0 or expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].intensity < 0):
+			# 		if(matchPoseIndex(node,expandedGridRes,expandedWidth) < len(expandedMap2)):
+			# 			for newNode in expandedMap2[matchPoseIndex(node,expandedGridRes,expandedWidth)].neighbors():
+			# 				dist = math.hypot(startBest[0] - newNode[0], startBest[1] - newNode[1])
+			# 				heapq.heappush(checking,(dist,newNode))
+			# 	else:
+			# 		found = True
+			# 		blobGoal = node
+			# 		blobGoal = list(blobGoal)
 			print "done with blobThing"
 			return (blobGoal,True)
 	return ([],False)
@@ -540,10 +557,10 @@ if __name__ == '__main__':
 	startTheta = theta
 	timeSince = 0
 	while(timeSince < 3):
-		publishTwist(0,.5)
+		publishTwist(0,.79)
 		timeSince = rospy.get_time() - startTime
-	while(math.fabs(theta - startTheta)>3):
-		publishTwist(0,.5)
+	# while(math.fabs(theta - startTheta)>3):
+	# 	publishTwist(0,.5)
 	stop()
 	while(newMap == False):
 		pass
@@ -551,7 +568,7 @@ if __name__ == '__main__':
 		rospy.sleep(1)
 		print "current Status %f " % status_num
 		if(status_num == 3 or status_num == 0 or status_num == 4):
-			if(len(frontiers) < 8 and newMap == True):
+			if(len(frontiers) < 4 and newMap == True):
 			 	break;
 			while(newCostMap == False):
 				pass
